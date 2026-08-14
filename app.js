@@ -9,6 +9,7 @@ import { PoisPage } from "./pois.js";
 import { MoneyPage } from "./money.js";
 import { SettingsPage } from "./settings.js";
 import { SharedMap } from "./sharedmap.js";
+import { Overview } from "./overview.js";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -20,12 +21,12 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
 
-const PAGES = ["dashboard", "map", "events", "members", "pois", "money", "settings"];
-const PAGE_LABEL = { dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", pois: "Points of Interest", money: "Money", settings: "Settings" };
+const PAGES = ["overview", "dashboard", "map", "events", "members", "pois", "money", "settings"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", pois: "Points of Interest", money: "Money", settings: "Settings" };
 
 const routeNow = () => {
   const p = (location.hash || "").replace(/^#\/?/, "").split("/")[0];
-  return PAGES.includes(p) ? p : "dashboard";
+  return PAGES.includes(p) ? p : "overview";   // home = the all-communities overview
 };
 
 function Login({ onSent, sent, error }) {
@@ -147,7 +148,7 @@ function App() {
   if (staffRows === undefined) return html`<div class="boot"><div class="boot-mark"><span class="dot pink"></span><span class="dot teal"></span></div><div class="boot-text">checking access…</div></div>`;
   if (!staffRows.length) return html`<${NotAuthorized} email=${session.user.email} onSignOut=${signOut} />`;
 
-  const ctx = { client, community, communities, isOwner, session, flash, go };
+  const ctx = { client, community, communities, isOwner, session, flash, go, pickComm };
 
   return html`<div class="shell">
     <div class="topbar">
@@ -164,7 +165,9 @@ function App() {
       <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
     </div>
     <div class="main">
-      ${page === "map"
+      ${page === "overview"
+        ? html`<${Overview} ...${ctx} />`    /* all communities — no selection needed */
+        : page === "map"
         ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
         : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
