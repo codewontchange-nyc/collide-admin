@@ -1,12 +1,48 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Modal, uploadMedia } from "./ui.js";
+import { EMOJI } from "./emoji-data.js";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
    fractions. Every edit here writes the same rows the app reads (and vice
    versa, realtime) — one universal map. Clouds & birds match the app. */
 
-const EMOJIS = ["📍", "🎉", "🎶", "🍕", "🍺", "🎨", "🏀", "🎬", "🌭", "☕", "🎪", "🕺"];
+const DEFAULT_RECENTS = ["📍", "🎉", "🎶", "🍕", "🍺", "🎨", "🏀", "🎬", "🌭", "☕", "🎪", "🕺"];
+
+/* Recents + search over the full emoji set — same behavior as the mobile app's
+   pin editor. Recents persist in localStorage. */
+function EmojiPicker({ value, onPick }) {
+  const [q, setQ] = useState("");
+  const [recents, setRecents] = useState(() => {
+    try {
+      const r = JSON.parse(localStorage.getItem("ca.emoji.recent"));
+      if (Array.isArray(r) && r.length) return r;
+    } catch {}
+    return DEFAULT_RECENTS;
+  });
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? EMOJI.filter((e) => e[1].includes(needle)).slice(0, 60).map((e) => e[0])
+    : recents;
+  const pick = (em) => {
+    onPick(em);
+    try {
+      const next = [em, ...recents.filter((r) => r !== em)].slice(0, 16);
+      localStorage.setItem("ca.emoji.recent", JSON.stringify(next));
+      setRecents(next);
+    } catch {}
+  };
+  return html`<div>
+    <input style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px"
+      placeholder="Search any emoji… pizza, dj, hike" value=${q} onInput=${(e) => setQ(e.target.value)} />
+    ${!needle && html`<div class="tiny muted" style="font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Recent</div>`}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:168px;overflow-y:auto">
+      ${shown.map((em) => html`<button type="button" key=${em} class="btn small ghost"
+        style=${value === em ? "border-color:#17181a" : ""} onClick=${() => pick(em)}>${em}</button>`)}
+      ${needle && !shown.length && html`<span class="tiny muted" style="padding:6px">No match — try another word</span>`}
+    </div>
+  </div>`;
+}
 const VENUES = [
   { key: "", label: "📍 Just a pin" },
   { key: "stadium", label: "🏟️ Stadium" }, { key: "castle", label: "🏰 Castle" },
@@ -270,13 +306,8 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
         <div class="field"><label>Image (shows on the dashboard grid)</label>
           <input type="file" accept="image/*" onChange=${(e) => setFile(e.target.files[0] || null)} /></div>
       ` : html`
-        <div class="field"><label>Pin emoji</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            ${EMOJIS.map((em) => html`<button type="button" class="btn small ghost"
-              style=${f.emoji === em ? "border-color:#17181a" : ""} onClick=${() => setF({ ...f, emoji: em })}>${em}</button>`)}
-            <input style="width:64px;padding:7px;border:1px solid var(--line);border-radius:8px;text-align:center" maxlength="2"
-              value=${f.emoji} onInput=${set("emoji")} aria-label="Custom emoji" />
-          </div></div>
+        <div class="field"><label>Pin emoji ${f.emoji && html`<span style="font-size:15px">${f.emoji}</span>`}</label>
+          <${EmojiPicker} value=${f.emoji} onPick=${(em) => setF({ ...f, emoji: em })} /></div>
         <div class="field"><label>Big event? Give it a landmark</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             ${VENUES.map((v) => html`<button type="button" class="btn small ghost" style=${f.venue === v.key ? "border-color:#17181a;font-weight:700" : ""}
