@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.s
 import { html, Modal } from "./ui.js";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
-   + map_events pins + community pins, all positioned by x/y fractions. Every
-   edit here writes the same rows the app reads (and vice versa, realtime) —
-   one universal map. Clouds & birds match the app's animations. */
+   + map_events pins + community pins + POI dots, all positioned by x/y
+   fractions. Every edit here writes the same rows the app reads (and vice
+   versa, realtime) — one universal map. Clouds & birds match the app. */
 
 const EMOJIS = ["📍", "🎉", "🎶", "🍕", "🍺", "🎨", "🏀", "🎬", "🌭", "☕", "🎪", "🕺"];
 const VENUES = [
@@ -67,23 +67,26 @@ const mapImageUrl = (client, path) => {
   try { return client.storage.from("map").getPublicUrl(path).data.publicUrl; } catch { return null; }
 };
 
-export function SharedMap({ client, session, flash, readonly = false, compact = false }) {
+export function SharedMap({ client, session, flash, readonly = false, compact = false, community = null, communities = [] }) {
   const [cfg, setCfg] = useState(undefined);
   const [events, setEvents] = useState([]);
   const [comms, setComms] = useState([]);
-  const [editing, setEditing] = useState(null);   // {x,y} for new | event row for edit
+  const [pois, setPois] = useState([]);
+  const [editing, setEditing] = useState(null);   // {x,y,_new} | map_event row | {_kind:'poi', ...poi row}
   const wrap = useRef(null);
   const drag = useRef(null);
 
   const load = useCallback(async () => {
-    const [c, e, k] = await Promise.all([
+    const [c, e, k, p] = await Promise.all([
       client.from("map_config").select("*").eq("id", 1).maybeSingle(),
       client.from("map_events").select("*").order("created_at"),
       client.from("communities").select("id,name,emoji,x,y"),
+      client.from("pois").select("*"),
     ]);
     setCfg(c.data || null);
     setEvents((e.data || []).filter(alive));
     setComms((k.data || []).filter((r) => r.x != null && r.y != null));
+    setPois((p.data || []).filter((r) => r.x != null && r.y != null));
   }, [client]);
   useEffect(() => { load(); }, [load]);
 
@@ -93,6 +96,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       .on("postgres_changes", { event: "*", schema: "public", table: "map_events" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "map_config" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pois" }, load)
       .subscribe();
     return () => { try { client.removeChannel(ch); } catch {} };
   }, [client, load]);
@@ -104,20 +108,21 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
 
   const onMapClick = (ev) => {
     if (readonly || drag.current?.moved) { drag.current = null; return; }
-    if (ev.target.closest(".map-pin")) return;
+    if (ev.target.closest(".map-pin") || ev.target.closest(".map-poi")) return;
     setEditing({ ...frac(ev), _new: true });
   };
 
-  /* drag pins (events + communities) — pointer events, save on release */
+  /* drag pins (events + communities + POIs) — save x/y on release;
+     a plain click (no movement) opens the editor for events & POIs */
   const startDrag = (row, table) => (ev) => {
     if (readonly) return;
     ev.stopPropagation(); ev.preventDefault();
     drag.current = { row, table, moved: false };
+    const el = ev.currentTarget;
     const move = (e) => {
       const f = frac(e);
       drag.current.moved = true;
       drag.current.f = f;
-      const el = ev.currentTarget;
       el.style.left = f.x * 100 + "%"; el.style.top = f.y * 100 + "%";
     };
     const up = async () => {
@@ -128,8 +133,9 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
         const { error } = await client.from(d.table).update({ x: d.f.x, y: d.f.y }).eq("id", d.row.id);
         if (error) flash(error.message); else flash("Moved 📍");
         load();
-      } else if (d && !d.moved && d.table === "map_events") {
-        setEditing(d.row);   // plain click on an event pin = edit it
+      } else if (d && !d.moved) {
+        if (d.table === "map_events") setEditing(d.row);
+        if (d.table === "pois") setEditing({ ...d.row, _kind: "poi" });
       }
       setTimeout(() => { drag.current = null; }, 0);
     };
@@ -165,6 +171,8 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
           <img class="smap-img" src=${img} alt="Community map" draggable=${false} />
           <${Clouds} />
           <${Birds} />
+          ${pois.map((p) => html`<button key=${"p" + p.id} class="map-poi" title=${p.name}
+              style=${`left:${p.x * 100}%;top:${p.y * 100}%`} onPointerDown=${startDrag(p, "pois")}></button>`)}
           ${comms.map((c) => html`<button key=${"c" + c.id} class="map-pin community-pin" title=${c.name}
               style=${`left:${c.x * 100}%;top:${c.y * 100}%`} onPointerDown=${startDrag(c, "communities")}>
             <span class="pe">${c.emoji || "🏘️"}</span><span class="pl">${c.name}</span>
@@ -175,17 +183,22 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
             ${e.title && html`<span class="pl">${e.title}</span>`}
           </button>`)}
         </div>`}
-    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin · drag pins to move them · click a pin to edit. Community homes are placed from the app (or drag them here).</p>`}
+    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it · click a pin or dot to edit. POI dots are the small black circles.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
+      community=${community} communities=${communities}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
   </div>`;
 }
 
-function PinModal({ client, session, pin, flash, onClose, onSaved }) {
+function PinModal({ client, session, pin, flash, community, communities, onClose, onSaved }) {
   const isNew = !!pin._new;
+  const isPoi = pin._kind === "poi";
+  const [kind, setKind] = useState(isPoi ? "poi" : "event");
   const [f, setF] = useState({
     emoji: pin.emoji || "🎉", title: pin.title || "", at_time: pin.at_time || "",
     place: pin.place || "", note: pin.note || "", link: pin.link || "", venue: pin.venue || "",
+    name: pin.name || "", category: pin.category || "", notes: pin.notes || "",
+    community_id: pin.community_id || community?.id || communities[0]?.id || "",
   });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -194,16 +207,30 @@ function PinModal({ client, session, pin, flash, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      if (isNew) {
-        const { error } = await client.from("map_events").insert({
-          ...f, x: pin.x, y: pin.y, expires_at: plus7d(), created_by: session.user.id,
-        });
-        if (error) throw error;
-        flash("Pin dropped — live in the app 🎉");
+      if (kind === "poi") {
+        if (!f.community_id) throw new Error("Pick a community for this POI");
+        const row = { name: f.name.trim() || "POI", category: f.category.trim() || null,
+          notes: f.notes.trim() || null, community_id: f.community_id };
+        if (isNew) {
+          const { error } = await client.from("pois").insert({ ...row, x: pin.x, y: pin.y, created_by: session.user.id });
+          if (error) throw error;
+          flash("POI dotted 📍");
+        } else {
+          const { error } = await client.from("pois").update(row).eq("id", pin.id);
+          if (error) throw error;
+          flash("POI updated");
+        }
       } else {
-        const { error } = await client.from("map_events").update(f).eq("id", pin.id);
-        if (error) throw error;
-        flash("Pin updated");
+        const row = { emoji: f.emoji, title: f.title, at_time: f.at_time, place: f.place, note: f.note, link: f.link, venue: f.venue };
+        if (isNew) {
+          const { error } = await client.from("map_events").insert({ ...row, x: pin.x, y: pin.y, expires_at: plus7d(), created_by: session.user.id });
+          if (error) throw error;
+          flash("Pin dropped — live in the app 🎉");
+        } else {
+          const { error } = await client.from("map_events").update(row).eq("id", pin.id);
+          if (error) throw error;
+          flash("Pin updated");
+        }
       }
       onSaved();
     } catch (err) { flash(err.message || String(err)); }
@@ -214,40 +241,58 @@ function PinModal({ client, session, pin, flash, onClose, onSaved }) {
     if (error) flash(error.message); else { flash("Renewed for 7 days"); onSaved(); }
   };
   const remove = async () => {
-    if (!confirm("Remove this pin from the map?")) return;
-    const { error } = await client.from("map_events").delete().eq("id", pin.id);
-    if (error) flash(error.message); else { flash("Pin removed"); onSaved(); }
+    const table = kind === "poi" ? "pois" : "map_events";
+    if (!confirm(`Remove this ${kind === "poi" ? "POI" : "pin"} from the map?`)) return;
+    const { error } = await client.from(table).delete().eq("id", pin.id);
+    if (error) flash(error.message); else { flash("Removed"); onSaved(); }
   };
 
-  return html`<${Modal} title=${isNew ? "Drop a pin" : "Edit pin"} onClose=${onClose}>
+  return html`<${Modal} title=${isNew ? "Add to the map" : kind === "poi" ? "Edit POI" : "Edit pin"} onClose=${onClose}>
     <form onSubmit=${save}>
-      <div class="field"><label>Pin emoji</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          ${EMOJIS.map((em) => html`<button type="button" class=${"btn small ghost" + (f.emoji === em ? " on-emoji" : "")}
-            style=${f.emoji === em ? "border-color:#17181a" : ""} onClick=${() => setF({ ...f, emoji: em })}>${em}</button>`)}
-          <input style="width:64px;padding:7px;border:1px solid var(--line);border-radius:8px;text-align:center" maxlength="2"
-            value=${f.emoji} onInput=${set("emoji")} aria-label="Custom emoji" />
-        </div></div>
-      <div class="field"><label>Big event? Give it a landmark</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${VENUES.map((v) => html`<button type="button" class="btn small ghost" style=${f.venue === v.key ? "border-color:#17181a;font-weight:700" : ""}
-            onClick=${() => setF({ ...f, venue: v.key })}>${v.label}</button>`)}
-        </div></div>
-      <div class="field"><label>Title</label><input value=${f.title} onInput=${set("title")} placeholder="Rooftop DJ set" /></div>
-      <div class="fieldrow">
-        <div class="field"><label>When</label><input value=${f.at_time} onInput=${set("at_time")} placeholder="Fri 9pm" /></div>
-        <div class="field"><label>Place</label><input value=${f.place} onInput=${set("place")} placeholder="The Loft" /></div>
-      </div>
-      <div class="field"><label>Note</label><input value=${f.note} onInput=${set("note")} placeholder="Bring friends!" /></div>
-      <div class="field"><label>Link</label><input value=${f.link} onInput=${set("link")} placeholder="https://…" /></div>
+      ${isNew && html`<div class="field"><label>What is it?</label>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="btn small ghost" style=${kind === "event" ? "border-color:#17181a;font-weight:700" : ""} onClick=${() => setKind("event")}>🎉 Event pin</button>
+          <button type="button" class="btn small ghost" style=${kind === "poi" ? "border-color:#17181a;font-weight:700" : ""} onClick=${() => setKind("poi")}>⚫ Point of interest</button>
+        </div></div>`}
+      ${kind === "poi" ? html`
+        <div class="fieldrow">
+          <div class="field"><label>Name</label><input required value=${f.name} onInput=${set("name")} placeholder="Our Fav Coffee" /></div>
+          <div class="field"><label>Category</label><input value=${f.category} onInput=${set("category")} placeholder="Coffee · Trail · Food…" /></div>
+        </div>
+        <div class="field"><label>Community</label>
+          <select value=${f.community_id} onChange=${set("community_id")}>
+            ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+          </select></div>
+        <div class="field"><label>Notes</label><input value=${f.notes} onInput=${set("notes")} placeholder="Why this spot matters" /></div>
+      ` : html`
+        <div class="field"><label>Pin emoji</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${EMOJIS.map((em) => html`<button type="button" class="btn small ghost"
+              style=${f.emoji === em ? "border-color:#17181a" : ""} onClick=${() => setF({ ...f, emoji: em })}>${em}</button>`)}
+            <input style="width:64px;padding:7px;border:1px solid var(--line);border-radius:8px;text-align:center" maxlength="2"
+              value=${f.emoji} onInput=${set("emoji")} aria-label="Custom emoji" />
+          </div></div>
+        <div class="field"><label>Big event? Give it a landmark</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${VENUES.map((v) => html`<button type="button" class="btn small ghost" style=${f.venue === v.key ? "border-color:#17181a;font-weight:700" : ""}
+              onClick=${() => setF({ ...f, venue: v.key })}>${v.label}</button>`)}
+          </div></div>
+        <div class="field"><label>Title</label><input value=${f.title} onInput=${set("title")} placeholder="Rooftop DJ set" /></div>
+        <div class="fieldrow">
+          <div class="field"><label>When</label><input value=${f.at_time} onInput=${set("at_time")} placeholder="Fri 9pm" /></div>
+          <div class="field"><label>Place</label><input value=${f.place} onInput=${set("place")} placeholder="The Loft" /></div>
+        </div>
+        <div class="field"><label>Note</label><input value=${f.note} onInput=${set("note")} placeholder="Bring friends!" /></div>
+        <div class="field"><label>Link</label><input value=${f.link} onInput=${set("link")} placeholder="https://…" /></div>
+      `}
       <div class="actions" style="justify-content:space-between">
         <div style="display:flex;gap:8px">
-          ${!isNew && html`<button type="button" class="btn small ghost" onClick=${renew}>Renew 7d</button>
+          ${!isNew && html`${kind !== "poi" && html`<button type="button" class="btn small ghost" onClick=${renew}>Renew 7d</button>`}
             <button type="button" class="btn small danger" onClick=${remove}>Remove</button>`}
         </div>
         <div style="display:flex;gap:10px">
           <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-          <button class="btn" disabled=${busy}>${busy ? "Saving…" : isNew ? "Drop pin" : "Save"}</button>
+          <button class="btn" disabled=${busy}>${busy ? "Saving…" : isNew ? (kind === "poi" ? "Add POI" : "Drop pin") : "Save"}</button>
         </div>
       </div>
     </form>

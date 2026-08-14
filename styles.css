@@ -191,3 +191,14 @@ a { color: inherit; }
 .smap.compact .map-pin { width: 34px; height: 34px; pointer-events: none; }
 .smap.compact .map-pin .pe { font-size: 15px; }
 .smap.compact .map-pin .pl { display: none; }
+
+/* POI dots: solid black, slight drop shadow, much smaller than pins — the
+   14px dot sits inside an invisible 32px hit area so it stays easy to tap. */
+.map-poi { position: absolute; transform: translate(-50%, -50%); width: 32px; height: 32px;
+  background: none; border: 0; padding: 0; cursor: grab; display: grid; place-items: center; touch-action: none; }
+.map-poi::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: #111;
+  box-shadow: 0 2px 5px rgba(18, 14, 12, .35); transition: transform 60ms; }
+.map-poi:hover::before { transform: scale(1.25); }
+.map-poi:active { cursor: grabbing; }
+.smap.compact .map-poi { width: 18px; height: 18px; pointer-events: none; }
+.smap.compact .map-poi::before { width: 9px; height: 9px; }
