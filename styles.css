@@ -144,3 +144,31 @@ a { color: inherit; }
 .leaflet-container { font: inherit; }
 
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 34px; text-align: center; color: var(--muted); }
+
+/* ---------- shared hand-drawn map (ported from the mobile app) ---------- */
+.smap { position: relative; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; cursor: crosshair; }
+.smap.compact { cursor: default; }
+.smap-img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.map-clouds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; }
+.map-cloud { will-change: left; filter: drop-shadow(0 3px 6px #120e0c1f); height: auto; position: absolute;
+  animation-name: cloud-drift; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes cloud-drift { 0% { left: -28%; } to { left: 122%; } }
+.map-birds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; }
+.map-bird { opacity: .85; height: auto; position: absolute;
+  animation: linear infinite bird-fly; animation-duration: var(--dur, 50s); animation-delay: var(--delay, 0s); }
+.map-bird path { fill: none; stroke: #111; stroke-width: 2.6px; stroke-linecap: round; }
+.map-bird .w1 { animation: bird-flap var(--flap, .6s) steps(1, end) infinite; animation-delay: var(--flapd, 0s); }
+.map-bird .w2 { animation: bird-flap var(--flap, .6s) steps(1, end) infinite; animation-delay: calc(var(--flapd, 0s) - var(--flap, .6s) / 2); }
+@keyframes bird-flap { 0%, 49.9% { opacity: 1; } 50%, to { opacity: 0; } }
+@keyframes bird-fly { 0% { left: var(--bx0); top: var(--by0); } to { left: var(--bx1); top: var(--by1); } }
+.map-pin { transform: translate(-50%, -50%); background: #fff; cursor: grab; border: 2px solid #111; border-radius: 50%;
+  width: 46px; height: 46px; padding: 0; display: grid; place-items: center; position: absolute;
+  box-shadow: 0 5px 22px #120e0c8c; transition: transform 60ms; touch-action: none; }
+.map-pin:active { cursor: grabbing; }
+.map-pin .pe { font-size: 20px; line-height: 1; }
+.map-pin .pl { position: absolute; top: 105%; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font: 600 11px Inter; background: #ffffffd9; border: 1px solid #111; border-radius: 999px; padding: 1px 8px; pointer-events: none; }
+.map-pin.community-pin { background: var(--gold-soft); }
+.smap.compact .map-pin { width: 34px; height: 34px; pointer-events: none; }
+.smap.compact .map-pin .pe { font-size: 15px; }
+.smap.compact .map-pin .pl { display: none; }

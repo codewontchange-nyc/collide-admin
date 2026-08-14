@@ -8,6 +8,7 @@ import { MembersPage } from "./members.js";
 import { PoisPage } from "./pois.js";
 import { MoneyPage } from "./money.js";
 import { SettingsPage } from "./settings.js";
+import { SharedMap } from "./sharedmap.js";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -19,8 +20,8 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
 
-const PAGES = ["dashboard", "events", "members", "pois", "money", "settings"];
-const PAGE_LABEL = { dashboard: "Dashboard", events: "Events", members: "Members", pois: "Points of Interest", money: "Money", settings: "Settings" };
+const PAGES = ["dashboard", "map", "events", "members", "pois", "money", "settings"];
+const PAGE_LABEL = { dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", pois: "Points of Interest", money: "Money", settings: "Settings" };
 
 const routeNow = () => {
   const p = (location.hash || "").replace(/^#\/?/, "").split("/")[0];
@@ -163,7 +164,9 @@ function App() {
       <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
     </div>
     <div class="main">
-      ${!community
+      ${page === "map"
+        ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
+        : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
         : page === "dashboard" ? html`<${Dashboard} ...${ctx} />`
         : page === "events" ? html`<${EventsPage} ...${ctx} />`

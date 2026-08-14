@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js";
-import { MapView } from "./map-widget.js";
+import { SharedMap } from "./sharedmap.js";
 
 /* The mockup screen: map + contributors + stat tiles + upcoming events + POI grid. */
 
-export function Dashboard({ client, community, go }) {
+export function Dashboard({ client, community, session, flash, go }) {
   const [members, setMembers] = useState([]);
   const [events, setEvents] = useState([]);
   const [pois, setPois] = useState([]);
@@ -40,13 +40,10 @@ export function Dashboard({ client, community, go }) {
   const ledgerSum = ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
 
-  const pins = [
-    ...pois.map((p) => ({ lat: p.lat, lng: p.lng, label: p.name, color: "#219a8f" })),
-    ...events.map((e) => ({ lat: e.lat, lng: e.lng, label: e.title, color: "#e85d75" })),
-  ];
-
   return html`<div class="dash">
-    <div class="mapcard"><${MapView} pins=${pins} /></div>
+    <div class="mapcard" onClick=${() => go("map")} style="cursor:pointer" title="Open the shared map">
+      <${SharedMap} client=${client} session=${session} flash=${flash} readonly compact />
+    </div>
     <div>
       <div class="section-label">Contributors</div>
       <div class="contribrow">
