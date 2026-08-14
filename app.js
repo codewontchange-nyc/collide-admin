@@ -5,7 +5,6 @@ import { html, Avatar, money } from "./ui.js";
 import { Dashboard } from "./dashboard.js";
 import { EventsPage } from "./events.js";
 import { MembersPage } from "./members.js";
-import { PoisPage } from "./pois.js";
 import { MoneyPage } from "./money.js";
 import { SettingsPage } from "./settings.js";
 import { SharedMap } from "./sharedmap.js";
@@ -21,8 +20,8 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
 
-const PAGES = ["overview", "dashboard", "map", "events", "members", "pois", "money", "settings"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", pois: "Points of Interest", money: "Money", settings: "Settings" };
+const PAGES = ["overview", "dashboard", "map", "events", "members", "money", "settings"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", money: "Money", settings: "Settings" };
 
 const routeNow = () => {
   const p = (location.hash || "").replace(/^#\/?/, "").split("/")[0];
@@ -174,7 +173,6 @@ function App() {
         : page === "dashboard" ? html`<${Dashboard} ...${ctx} />`
         : page === "events" ? html`<${EventsPage} ...${ctx} />`
         : page === "members" ? html`<${MembersPage} ...${ctx} />`
-        : page === "pois" ? html`<${PoisPage} ...${ctx} />`
         : page === "money" ? html`<${MoneyPage} ...${ctx} />`
         : html`<${SettingsPage} ...${ctx} />`}
       ${isOwner && page === "settings" && null}

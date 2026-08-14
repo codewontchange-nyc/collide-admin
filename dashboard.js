@@ -96,12 +96,12 @@ export function Dashboard({ client, community, session, flash, go }) {
             <span class="muted tiny">${pois.length}</span>
           </div>
           <div class="poigrid">
-            ${pois.slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("pois")} style="cursor:pointer">
+            ${pois.slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
               <div class="disc">${p.image_path ? html`<img src=${mediaUrl(client, p.image_path)} alt="" />` : "📍"}</div>
               <div class="n">${p.name}</div>
               ${p.category && html`<div class="c">${p.category}</div>`}
             </div>`)}
-            ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1">No points of interest yet — pin your favorites 📍</div>`}
+            ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal } from "./ui.js";
+import { html, Modal, uploadMedia } from "./ui.js";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -201,6 +201,7 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
     community_id: pin.community_id || community?.id || communities[0]?.id || "",
   });
   const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const save = async (e) => {
@@ -209,8 +210,10 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
     try {
       if (kind === "poi") {
         if (!f.community_id) throw new Error("Pick a community for this POI");
+        let image_path = pin.image_path || null;
+        if (file) image_path = await uploadMedia(client, "poi", file);
         const row = { name: f.name.trim() || "POI", category: f.category.trim() || null,
-          notes: f.notes.trim() || null, community_id: f.community_id };
+          notes: f.notes.trim() || null, community_id: f.community_id, image_path };
         if (isNew) {
           const { error } = await client.from("pois").insert({ ...row, x: pin.x, y: pin.y, created_by: session.user.id });
           if (error) throw error;
@@ -264,6 +267,8 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
             ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
           </select></div>
         <div class="field"><label>Notes</label><input value=${f.notes} onInput=${set("notes")} placeholder="Why this spot matters" /></div>
+        <div class="field"><label>Image (shows on the dashboard grid)</label>
+          <input type="file" accept="image/*" onChange=${(e) => setFile(e.target.files[0] || null)} /></div>
       ` : html`
         <div class="field"><label>Pin emoji</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
