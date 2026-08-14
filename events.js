@@ -61,6 +61,17 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
+  // The mobile app renders when_bucket / at_time / place — write BOTH the
+  // admin fields and the app-native ones so events look identical everywhere.
+  const whenBucket = (dateStr) => {
+    const days = Math.round((new Date(dateStr + "T00:00:00") - new Date(new Date().toDateString())) / 864e5);
+    if (days <= 0) return "today";
+    if (days === 1) return "tomorrow";
+    const dow = new Date(dateStr + "T00:00:00").getDay();
+    if (days <= 7) return (dow === 0 || dow >= 5) ? "this_weekend" : "this_week";
+    if (days <= 14) return "next_week";
+    return "someday";
+  };
   const save = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -72,6 +83,12 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
         title: f.title.trim(), date: f.date || null, starts_at: f.starts_at || null,
         location: f.location.trim() || null, lat: picked?.lat ?? null, lng: picked?.lng ?? null,
         image_path, price_cents: Math.round((parseFloat(f.price) || 0) * 100),
+        // app-native mirrors
+        place: f.location.trim() || null,
+        at_time: f.starts_at ? niceTime(f.starts_at) : null,
+        when_bucket: f.date ? whenBucket(f.date) : null,
+        visibility: "public",
+        expires_at: f.date ? new Date(new Date(f.date + "T23:59:00").getTime() + 864e5).toISOString() : null,
       };
       const q = event
         ? client.from("activities").update(row).eq("id", event.id)
