@@ -152,7 +152,7 @@ function App() {
 
   return html`<div class="shell">
     <div class="topbar">
-      <span class="wordmark">collide</span>
+      <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
         ${PAGES.map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
         <button disabled title="Coming soon">Partnerships</button>
