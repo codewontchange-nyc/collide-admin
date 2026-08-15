@@ -140,8 +140,6 @@ a { color: inherit; }
 .fieldrow { display: flex; gap: 12px; }
 .fieldrow .field { flex: 1; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-.pickmap { height: 240px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 4px; }
-.leaflet-container { font: inherit; }
 
 .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 34px; text-align: center; color: var(--muted); }
 

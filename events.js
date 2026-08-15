@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js";
-import { MapView } from "./map-widget.js";
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
@@ -73,7 +72,6 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
     category: event?.category || "other", note: event?.note || "",
     capacity: event?.capacity || "", link: event?.link || "",
   });
-  const [picked, setPicked] = useState(event?.lat != null ? { lat: event.lat, lng: event.lng } : null);
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -98,7 +96,7 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
       const row = {
         community_id: community.id, host_id: event?.host_id || session.user.id,
         title: f.title.trim(), date: f.date || null, starts_at: f.starts_at || null,
-        location: f.location.trim() || null, lat: picked?.lat ?? null, lng: picked?.lng ?? null,
+        location: f.location.trim() || null,
         image_path, price_cents: Math.round((parseFloat(f.price) || 0) * 100),
         // full parity with the app's Plan-something sheet
         category: f.category, note: f.note.trim() || null,
@@ -135,11 +133,6 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
         <div class="field"><label>Price (optional)</label><input type="number" min="0" step="0.01" value=${f.price} onInput=${set("price")} placeholder="0" /></div>
       </div>
       <div class="field"><label>Location name</label><input value=${f.location} onInput=${set("location")} placeholder="Eagle Rock Trailhead" /></div>
-      <div class="field"><label>Pin on map — click to place</label>
-        <${MapView} className="pickmap" onPick=${setPicked} picked=${picked}
-          center=${picked ? [picked.lat, picked.lng] : null} />
-        ${picked && html`<div class="tiny muted">📍 ${picked.lat.toFixed(4)}, ${picked.lng.toFixed(4)}</div>`}
-      </div>
       <div class="field"><label>Note</label><input value=${f.note} onInput=${set("note")} placeholder="Bring layers — it gets windy" /></div>
       <div class="fieldrow">
         <div class="field"><label>Capacity (optional)</label><input type="number" min="1" value=${f.capacity} onInput=${set("capacity")} placeholder="∞" /></div>
