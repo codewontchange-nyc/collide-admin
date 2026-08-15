@@ -209,10 +209,6 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
           <${Birds} />
           ${pois.map((p) => html`<button key=${"p" + p.id} class="map-poi" title=${p.name}
               style=${`left:${p.x * 100}%;top:${p.y * 100}%`} onPointerDown=${startDrag(p, "pois")}></button>`)}
-          ${comms.map((c) => html`<button key=${"c" + c.id} class="map-pin community-pin" title=${c.name}
-              style=${`left:${c.x * 100}%;top:${c.y * 100}%`} onPointerDown=${startDrag(c, "communities")}>
-            <span class="pe">${c.emoji || "🏘️"}</span><span class="pl">${c.name}</span>
-          </button>`)}
           ${events.map((e) => html`<button key=${e.id} class="map-pin" title=${e.title || ""}
               style=${`left:${e.x * 100}%;top:${e.y * 100}%`} onPointerDown=${startDrag(e, "map_events")}>
             <span class="pe">${e.venue ? VENUE_EMOJI[e.venue] : (e.emoji || "🎉")}</span>
