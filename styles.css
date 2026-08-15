@@ -168,7 +168,7 @@ a { color: inherit; }
 .smap { position: relative; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; cursor: crosshair; }
 .smap.compact { cursor: default; }
 .smap-img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
-.map-clouds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; }
+.map-clouds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; z-index: 4; }
 .map-cloud { will-change: left; filter: drop-shadow(0 3px 6px #120e0c1f); height: auto; position: absolute;
   animation-name: cloud-drift; animation-timing-function: linear; animation-iteration-count: infinite; }
 @keyframes cloud-drift { 0% { left: -28%; } to { left: 122%; } }
