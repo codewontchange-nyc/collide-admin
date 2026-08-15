@@ -168,11 +168,11 @@ a { color: inherit; }
 .smap { position: relative; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; cursor: crosshair; }
 .smap.compact { cursor: default; }
 .smap-img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
-.map-clouds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; z-index: 4; }
+.map-clouds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; z-index: 12; }
 .map-cloud { will-change: left; filter: drop-shadow(0 3px 6px #120e0c1f); height: auto; position: absolute;
   animation-name: cloud-drift; animation-timing-function: linear; animation-iteration-count: infinite; }
 @keyframes cloud-drift { 0% { left: -28%; } to { left: 122%; } }
-.map-birds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; }
+.map-birds { pointer-events: none; position: absolute; inset: 0; overflow: hidden; z-index: 12; }
 .map-bird { opacity: .85; height: auto; position: absolute;
   animation: linear infinite bird-fly; animation-duration: var(--dur, 50s); animation-delay: var(--delay, 0s); }
 .map-bird path { fill: none; stroke: #111; stroke-width: 2.6px; stroke-linecap: round; }
