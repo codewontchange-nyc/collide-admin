@@ -17,12 +17,16 @@ export function Dashboard({ client, community, session, flash, go }) {
     (async () => {
       const [m, e, p, l] = await Promise.all([
         client.from("community_members").select("status, joined_at, profile:profiles!community_members_profile_id_fkey(id,display_name,avatar_url)").eq("community_id", community.id),
-        client.from("activities").select("*").eq("community_id", community.id).gte("date", todayStr()).order("date").limit(50),
+        client.from("activities").select("*").eq("community_id", community.id).order("created_at", { ascending: false }).limit(100),
         client.from("pois").select("*").eq("community_id", community.id).order("created_at", { ascending: false }),
         client.from("ledger").select("amount_cents, happened_on").eq("community_id", community.id),
       ]);
       if (!live) return;
-      setMembers(m.data || []); setEvents(e.data || []); setPois(p.data || []); setLedger(l.data || []);
+      // date-less plans (made from the phone) count as upcoming until they expire
+      const upcoming = (e.data || [])
+        .filter((ev) => ev.date ? ev.date >= todayStr() : !(ev.expires_at && new Date(ev.expires_at).getTime() < Date.now()))
+        .sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1);
+      setMembers(m.data || []); setEvents(upcoming); setPois(p.data || []); setLedger(l.data || []);
     })();
     return () => { live = false; };
   }, [community?.id]);
