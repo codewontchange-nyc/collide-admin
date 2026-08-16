@@ -28,8 +28,14 @@ export const todayStr = () => {
 const HUES = ["#e85d75", "#219a8f", "#b9852e", "#6b4fbb", "#3a7bd5", "#588c3f"];
 export function Avatar({ profile, size = "" }) {
   const name = profile?.display_name || "?";
-  if (profile?.avatar_url)
-    return html`<img class=${"avatar " + size} src=${profile.avatar_url} alt=${name} title=${name} />`;
+  // avatar_url is a storage path in the public `avatars` bucket (same as the app)
+  const raw = profile?.avatar_url;
+  const src = raw
+    ? (raw.startsWith("http") ? raw
+      : `${window.CA_CONFIG?.SUPABASE_URL || ""}/storage/v1/object/public/avatars/${raw}`)
+    : null;
+  if (src)
+    return html`<img class=${"avatar " + size} src=${src} alt=${name} title=${name} />`;
   const hue = HUES[(name.charCodeAt(0) || 0) % HUES.length];
   return html`<span class=${"avatar ph " + size} style=${`background:${hue}`} title=${name}>${name[0].toUpperCase()}</span>`;
 }

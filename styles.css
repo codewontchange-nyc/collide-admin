@@ -200,3 +200,9 @@ a { color: inherit; }
 .map-poi:active { cursor: grabbing; }
 .smap.compact .map-poi { width: 18px; height: 18px; pointer-events: none; }
 .smap.compact .map-poi::before { width: 9px; height: 9px; }
+
+/* cluster preview badges — what members see folded together at default zoom */
+.smap-cluster { position: absolute; transform: translate(-50%, -140%); z-index: 5; pointer-events: none;
+  width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 1.5px solid #17181a;
+  display: grid; place-items: center; font: 600 11px Fraunces, serif; color: #17181a;
+  box-shadow: 0 2px 8px rgba(18,14,12,.25); }

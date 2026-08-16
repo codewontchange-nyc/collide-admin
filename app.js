@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
 import { html, Avatar, money } from "./ui.js";
 import { Dashboard } from "./dashboard.js";
 import { EventsPage } from "./events.js";
+import { AnnouncementsPage } from "./announcements.js";
 import { MembersPage } from "./members.js";
 import { MoneyPage } from "./money.js";
 import { SettingsPage } from "./settings.js";
@@ -20,8 +21,8 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
 
-const PAGES = ["overview", "dashboard", "map", "events", "members", "money", "settings"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", events: "Events", members: "Members", money: "Money", settings: "Settings" };
+const PAGES = ["overview", "dashboard", "map", "announcements", "events", "members", "money", "settings"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", announcements: "Announcements", events: "Events", members: "Members", money: "Money", settings: "Settings" };
 
 const routeNow = () => {
   const p = (location.hash || "").replace(/^#\/?/, "").split("/")[0];
@@ -168,6 +169,8 @@ function App() {
         ? html`<${Overview} ...${ctx} />`    /* all communities — no selection needed */
         : page === "map"
         ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
+        : page === "announcements"
+        ? html`<${AnnouncementsPage} ...${ctx} />` /* announcements are app-wide too */
         : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
         : page === "dashboard" ? html`<${Dashboard} ...${ctx} />`

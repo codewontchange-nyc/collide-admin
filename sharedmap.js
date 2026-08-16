@@ -194,6 +194,27 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     } catch (e) { flash(e.message || String(e)); }
   };
 
+  /* Cluster preview: the app folds any pins whose centers land within 46
+     screen px (at its default zoom) into a count chip. Mirror that math here
+     (phone fits map height ~700px, default zoom 1.3x) so staff can SEE which
+     pins members experience as one chip — without breaking drag-to-edit. */
+  const [aspect, setAspect] = useState(null);
+  const clusterBadges = useMemo(() => {
+    if (!aspect) return [];
+    const H = 700 * 1.3, W = aspect * H;
+    const pts = [
+      ...pois.map((p) => ({ x: p.x, y: p.y })),
+      ...events.map((e) => ({ x: e.x, y: e.y })),
+    ].map((p) => ({ ...p, px: p.x * W, py: p.y * H }));
+    const groups = [];
+    for (const pt of pts.sort((a2, b2) => a2.py - b2.py || a2.px - b2.px)) {
+      const g = groups.find((q2) => Math.hypot(q2.px / q2.n - pt.px, q2.py / q2.n - pt.py) < 46);
+      if (g) { g.px += pt.px; g.py += pt.py; g.x += pt.x; g.y += pt.y; g.n++; }
+      else groups.push({ px: pt.px, py: pt.py, x: pt.x, y: pt.y, n: 1 });
+    }
+    return groups.filter((g) => g.n > 1).map((g) => ({ x: g.x / g.n, y: g.y / g.n, n: g.n }));
+  }, [aspect, pois, events]);
+
   const img = cfg === undefined ? undefined : mapImageUrl(client, cfg?.image_path);
 
   return html`<div>
@@ -204,11 +225,15 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     ${img === undefined ? html`<div class="empty">Loading map…</div>`
       : !img ? html`<div class="empty">No map artwork yet — upload one 🗺️</div>`
       : html`<div class=${"smap" + (compact ? " compact" : "")} ref=${wrap} onClick=${onMapClick}>
-          <img class="smap-img" src=${img} alt="Community map" draggable=${false} />
+          <img class="smap-img" src=${img} alt="Community map" draggable=${false}
+            onLoad=${(e) => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)} />
           <${Clouds} />
           <${Birds} />
           ${pois.map((p) => html`<button key=${"p" + p.id} class="map-poi" title=${p.name}
               style=${`left:${p.x * 100}%;top:${p.y * 100}%`} onPointerDown=${startDrag(p, "pois")}></button>`)}
+          ${clusterBadges.map((b, i) => html`<span key=${"cb" + i} class="smap-cluster"
+              title="Members see these ${b.n} folded into one chip at default zoom"
+              style=${`left:${b.x * 100}%;top:${b.y * 100}%`}>${b.n}</span>`)}
           ${events.map((e) => html`<button key=${e.id} class="map-pin" title=${e.title || ""}
               style=${`left:${e.x * 100}%;top:${e.y * 100}%`} onPointerDown=${startDrag(e, "map_events")}>
             <span class="pe">${e.venue ? VENUE_EMOJI[e.venue] : (e.emoji || "🎉")}</span>
