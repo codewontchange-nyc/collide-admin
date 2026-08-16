@@ -226,6 +226,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       : !img ? html`<div class="empty">No map artwork yet — upload one 🗺️</div>`
       : html`<div class=${"smap" + (compact ? " compact" : "")} ref=${wrap} onClick=${onMapClick}>
           <img class="smap-img" src=${img} alt="Community map" draggable=${false}
+            ref=${(el) => { if (el && el.complete && el.naturalWidth) setAspect(el.naturalWidth / el.naturalHeight); }}
             onLoad=${(e) => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)} />
           <${Clouds} />
           <${Birds} />
