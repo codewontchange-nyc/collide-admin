@@ -1,8 +1,33 @@
-import { useState, useEffect, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
+import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js";
-import { SharedMap } from "./sharedmap.js";
 
-/* The mockup screen: map + contributors + stat tiles + upcoming events + POI grid. */
+/* Community dashboard: the LIVE app (phone-sized, signed in as you — same
+   origin, shared session) on the left; contributors, stats, events and the
+   POI grid to the right. */
+
+const PHONE_W = 390, PHONE_H = 844;   // standard HD device points
+
+function PhonePreview() {
+  const wrap = useRef(null);
+  const [s, setS] = useState(1);
+  useEffect(() => {
+    const fit = () => {
+      const avail = window.innerHeight - 150;   // topbar + breathing room
+      setS(Math.min(1, avail / PHONE_H));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+  return html`<div class="phone-col" style=${`width:${Math.round(PHONE_W * s)}px`}>
+    <div class="phone-shell" style=${`width:${Math.round(PHONE_W * s)}px;height:${Math.round(PHONE_H * s)}px`}>
+      <div class="phone-frame" style=${`transform:scale(${s})`}>
+        <iframe class="phone-iframe" src="/Collide/" title="Live app" />
+      </div>
+    </div>
+    <p class="muted tiny phone-cap">The real app, signed in as you — post an event or announcement and watch it land in realtime.</p>
+  </div>`;
+}
 
 export function Dashboard({ client, community, session, flash, go }) {
   const [members, setMembers] = useState([]);
@@ -44,11 +69,9 @@ export function Dashboard({ client, community, session, flash, go }) {
   const ledgerSum = ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
 
-  return html`<div class="dash">
-    <div class="mapcard" onClick=${() => go("map")} style="cursor:pointer" title="Open the shared map">
-      <${SharedMap} client=${client} session=${session} flash=${flash} readonly compact />
-    </div>
-    <div>
+  return html`<div class="dash2">
+    <${PhonePreview} />
+    <div class="dash-right">
       <div class="section-label">Contributors</div>
       <div class="contribrow">
         ${active.slice(0, 7).map((m) => html`<${Avatar} profile=${m.profile} size="lg" />`)}
@@ -81,7 +104,7 @@ export function Dashboard({ client, community, session, flash, go }) {
             <button class="btn pill" onClick=${() => go("events")}>create new</button>
           </div>
           <div class="evlist">
-            ${events.slice(0, 3).map((e) => html`<div class="evcard" onClick=${() => go("events")} style="cursor:pointer">
+            ${events.slice(0, 4).map((e) => html`<div class="evcard" onClick=${() => go("events")} style="cursor:pointer">
               ${e.image_path
                 ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />`
                 : html`<div class="thumb">🗓️</div>`}
@@ -91,7 +114,7 @@ export function Dashboard({ client, community, session, flash, go }) {
               </div>
             </div>`)}
             ${events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}
-            ${events.length > 3 && html`<button class="seeall" onClick=${() => go("events")}>see all ${events.length}</button>`}
+            ${events.length > 4 && html`<button class="seeall" onClick=${() => go("events")}>see all ${events.length}</button>`}
           </div>
         </div>
         <div>

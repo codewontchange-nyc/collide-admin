@@ -206,3 +206,20 @@ a { color: inherit; }
   width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 1.5px solid #17181a;
   display: grid; place-items: center; font: 600 11px Fraunces, serif; color: #17181a;
   box-shadow: 0 2px 8px rgba(18,14,12,.25); }
+
+/* ---------- dashboard v2: live phone on the left, data right ---------- */
+.dash2 { display: flex; gap: 30px; align-items: flex-start; }
+.phone-col { flex: none; }
+.phone-shell { position: relative; }
+.phone-frame {
+  width: 390px; height: 844px; transform-origin: top left;
+  border: 1px solid var(--line); border-radius: 38px; overflow: hidden;
+  background: #fff; box-shadow: 0 16px 44px rgba(20,16,12,.16);
+}
+.phone-iframe { width: 100%; height: 100%; border: none; display: block; }
+.phone-cap { margin-top: 10px; max-width: 320px; line-height: 1.45; }
+.dash-right { flex: 1; min-width: 0; }
+@media (max-width: 1080px) {
+  .dash2 { flex-direction: column; }
+  .phone-col { align-self: center; }
+}
