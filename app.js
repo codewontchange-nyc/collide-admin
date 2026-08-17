@@ -103,8 +103,7 @@ function App() {
       if (!live) return;
       setCommunities(comms || []);
       const saved = localStorage.getItem("ca.comm");
-      if (saved === "") setCommId("");                                  // "All communities"
-      else if (saved && (comms || []).some((c) => c.id === saved)) setCommId(saved);
+      if (saved && (comms || []).some((c) => c.id === saved)) setCommId(saved);
       else if (comms && comms.length) setCommId(comms[0].id);
       const { data: prof } = await client.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       if (live) setProfile(prof || null);
@@ -151,23 +150,20 @@ function App() {
 
   const ctx = { client, community, communities, isOwner, session, flash, go, pickComm };
 
-  return html`<div class="shell side">
-    <aside class="sidebar">
+  return html`<div class="shell">
+    <div class="topbar">
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
-      ${communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)}>
-        <option value="">🌐 All communities</option>
-        ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
-      </select>`}
-      <nav class="sidenav">
+      <div class="nav">
         ${PAGES.map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
         <button disabled title="Coming soon">Partnerships</button>
-      </nav>
-      <div class="sidefoot">
-        ${barTotal != null && community && html`<span class="money">${money(barTotal)}</span>`}
-        <${Avatar} profile=${profile || { display_name: session.user.email }} />
-        <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
       </div>
-    </aside>
+      ${barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
+      ${communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)}>
+        ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+      </select>`}
+      <${Avatar} profile=${profile || { display_name: session.user.email }} />
+      <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
+    </div>
     <div class="main">
       ${page === "overview"
         ? html`<${Overview} ...${ctx} />`    /* all communities — no selection needed */
@@ -175,12 +171,10 @@ function App() {
         ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
         : page === "announcements"
         ? html`<${AnnouncementsPage} ...${ctx} />` /* announcements are app-wide too */
-        : page === "dashboard"
-        ? html`<${Dashboard} ...${ctx} />`   /* works scoped or across all communities */
-        : page === "events"
-        ? html`<${EventsPage} ...${ctx} />`  /* aggregates when All is selected */
         : !community
-        ? html`<div class="empty">Pick a community in the sidebar${isOwner ? " — or create one in Settings." : "."}</div>`
+        ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
+        : page === "dashboard" ? html`<${Dashboard} ...${ctx} />`
+        : page === "events" ? html`<${EventsPage} ...${ctx} />`
         : page === "members" ? html`<${MembersPage} ...${ctx} />`
         : page === "money" ? html`<${MoneyPage} ...${ctx} />`
         : html`<${SettingsPage} ...${ctx} />`}

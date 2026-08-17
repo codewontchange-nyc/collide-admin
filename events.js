@@ -3,8 +3,7 @@ import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyEx
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
-export function EventsPage({ client, community, communities, session, flash }) {
-  const cname = (id) => communities?.find((c) => c.id === id)?.name;
+export function EventsPage({ client, community, session, flash }) {
   const [events, setEvents] = useState([]);
   const [showPast, setShowPast] = useState(false);
   const [editing, setEditing] = useState(null);    // null | {} (new) | event row
@@ -13,15 +12,14 @@ export function EventsPage({ client, community, communities, session, flash }) {
   // One fetch, split client-side — phone-made plans often have no date (just a
   // when-bucket), and a date filter alone silently hid them from this page.
   const load = useCallback(async () => {
-    let q = client.from("activities").select("*");
-    if (community) q = q.eq("community_id", community.id);
-    const { data } = await q.order("created_at", { ascending: false }).limit(400);
+    const { data } = await client.from("activities").select("*")
+      .eq("community_id", community.id).order("created_at", { ascending: false }).limit(400);
     const all = data || [];
     const upcoming = all.filter((e) => e.date ? e.date >= todayStr() : !expired(e));
     const past = all.filter((e) => e.date ? e.date < todayStr() : expired(e));
     const sorted = (showPast ? past : upcoming).sort((a, b) => (a.date || "9999") < (b.date || "9999") ? (showPast ? 1 : -1) : (showPast ? -1 : 1));
     setEvents(sorted);
-  }, [client, community?.id, showPast]);
+  }, [client, community.id, showPast]);
   useEffect(() => { load(); }, [load]);
 
   const remove = async (ev) => {
@@ -35,7 +33,7 @@ export function EventsPage({ client, community, communities, session, flash }) {
       <h2 style="margin:0">Events</h2>
       <div style="display:flex;gap:10px;align-items:center">
         <button class="linkbtn tiny" onClick=${() => setShowPast(!showPast)}>${showPast ? "show upcoming" : "show past"}</button>
-        ${community ? html`<button class="btn" onClick=${() => setEditing({})}>+ New event</button>` : html`<span class="muted tiny">pick a community to create</span>`}
+        <button class="btn" onClick=${() => setEditing({})}>+ New event</button>
       </div>
     </div>
     <div class="evlist">
@@ -43,7 +41,7 @@ export function EventsPage({ client, community, communities, session, flash }) {
         ${e.image_path ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />` : html`<div class="thumb">🗓️</div>`}
         <div style="flex:1">
           <div class="t">${e.title}${e.price_cents > 0 && html` <span class="pillstat">${moneyExact(e.price_cents)}</span>`}${e.category && html` <span class="pillstat">${e.category}</span>`}</div>
-          <div class="d">${e.date ? niceDate(e.date) : (e.when_bucket || "soon").replace(/_/g, " ")}${e.starts_at ? " · " + niceTime(e.starts_at) : (e.at_time ? " · " + e.at_time : "")}${(e.location || e.place) ? " · 📍 " + (e.location || e.place) : ""}${!community && cname(e.community_id) ? " · " + cname(e.community_id) : ""}</div>
+          <div class="d">${e.date ? niceDate(e.date) : (e.when_bucket || "soon").replace(/_/g, " ")}${e.starts_at ? " · " + niceTime(e.starts_at) : (e.at_time ? " · " + e.at_time : "")}${(e.location || e.place) ? " · 📍 " + (e.location || e.place) : ""}</div>
         </div>
         <div class="rowactions">
           <button class="btn small ghost" onClick=${() => setRoster(e)}>RSVPs</button>
