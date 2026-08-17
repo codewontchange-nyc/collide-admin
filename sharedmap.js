@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia } from "./ui.js";
+import { html, Modal, uploadMedia, mediaUrl } from "./ui.js";
 import { EMOJI } from "./emoji-data.js";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
@@ -256,10 +256,13 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
     emoji: pin.emoji || "🎉", title: pin.title || "", at_time: pin.at_time || "",
     place: pin.place || "", note: pin.note || "", link: pin.link || "", venue: pin.venue || "",
     name: pin.name || "", category: pin.category || "", notes: pin.notes || "",
+    address: pin.address || "", hours: pin.hours || "",
     community_id: pin.community_id || community?.id || communities[0]?.id || "",
   });
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState(null);
+  const [gallery, setGallery] = useState(pin.images || []);   // storage paths already saved
+  const [galleryFiles, setGalleryFiles] = useState([]);       // new files, uploaded on save
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const save = async (e) => {
@@ -270,8 +273,12 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
         if (!f.community_id) throw new Error("Pick a community for this POI");
         let image_path = pin.image_path || null;
         if (file) image_path = await uploadMedia(client, "poi", file);
+        const uploaded = [];
+        for (const gf of galleryFiles) uploaded.push(await uploadMedia(client, "poi", gf));
         const row = { name: f.name.trim() || "POI", category: f.category.trim() || null,
-          notes: f.notes.trim() || null, community_id: f.community_id, image_path };
+          notes: f.notes.trim() || null, community_id: f.community_id, image_path,
+          address: f.address.trim() || null, hours: f.hours.trim() || null,
+          link: f.link.trim() || null, images: [...gallery, ...uploaded] };
         if (isNew) {
           const { error } = await client.from("pois").insert({ ...row, x: pin.x, y: pin.y, created_by: session.user.id });
           if (error) throw error;
@@ -325,8 +332,24 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
             ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
           </select></div>
         <div class="field"><label>Notes</label><input value=${f.notes} onInput=${set("notes")} placeholder="Why this spot matters" /></div>
-        <div class="field"><label>Image (shows on the dashboard grid)</label>
+        <div class="fieldrow">
+          <div class="field"><label>Address</label><input value=${f.address} onInput=${set("address")} placeholder="188 Suydam St, Bushwick" /></div>
+          <div class="field"><label>Hours</label><input value=${f.hours} onInput=${set("hours")} placeholder="7a–4p daily" /></div>
+        </div>
+        <div class="field"><label>Link</label><input value=${f.link} onInput=${set("link")} placeholder="https://…" /></div>
+        <div class="field"><label>Cover image (dashboard grid + carousel fallback)</label>
           <input type="file" accept="image/*" onChange=${(e) => setFile(e.target.files[0] || null)} /></div>
+        <div class="field"><label>Photo carousel (shows in the app's place drawer)</label>
+          ${gallery.length > 0 && html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            ${gallery.map((p) => html`<div style="position:relative">
+              <img src=${mediaUrl(client, p)} alt="" style="width:74px;height:52px;object-fit:cover;border-radius:8px" />
+              <button type="button" title="Remove photo" onClick=${() => setGallery(gallery.filter((x) => x !== p))}
+                style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#17181a;color:#fff;font-size:11px;line-height:1;cursor:pointer">×</button>
+            </div>`)}
+          </div>`}
+          <input type="file" accept="image/*" multiple onChange=${(e) => setGalleryFiles([...e.target.files])} />
+          ${galleryFiles.length > 0 && html`<div class="tiny muted" style="margin-top:4px">${galleryFiles.length} new photo${galleryFiles.length > 1 ? "s" : ""} will upload on save</div>`}
+        </div>
       ` : html`
         <div class="field"><label>Pin emoji ${f.emoji && html`<span style="font-size:15px">${f.emoji}</span>`}</label>
           <${EmojiPicker} value=${f.emoji} onPick=${(em) => setF({ ...f, emoji: em })} /></div>
