@@ -185,6 +185,7 @@ function App() {
         : page === "money" ? html`<${MoneyPage} ...${ctx} />`
         : html`<${SettingsPage} ...${ctx} />`}
       ${isOwner && page === "settings" && null}
+    </div>
     ${toast && html`<div class="toast">${toast}</div>`}
   </div>`;
 }
