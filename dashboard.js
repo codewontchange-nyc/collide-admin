@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=2";
-import { EventsPage } from "./events.js?v=2";
-import { AnnouncementsPage } from "./announcements.js?v=2";
-import { MembersPage } from "./members.js?v=2";
-import { MoneyPage } from "./money.js?v=2";
-import { SettingsPage } from "./settings.js?v=2";
-import { PartnershipsPage } from "./partnerships.js?v=2";
+import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=3";
+import { EventsPage } from "./events.js?v=3";
+import { AnnouncementsPage } from "./announcements.js?v=3";
+import { MembersPage } from "./members.js?v=3";
+import { MoneyPage } from "./money.js?v=3";
+import { SettingsPage } from "./settings.js?v=3";
+import { PartnershipsPage } from "./partnerships.js?v=3";
 
 /* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
    on the left, and every facilitator section as a tab on the right — all of
@@ -108,14 +108,17 @@ function DashHome({ client, community, flash, go }) {
   const ledgerSum = ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
 
-  return html`<div>
-    <div class="section-label">Contributors</div>
-    <div class="contribrow">
-      ${active.slice(0, 7).map((m) => html`<${Avatar} profile=${m.profile} size="lg" />`)}
-      <button class="addbtn" title="Invite members" onClick=${() => go("dashboard/members")}>+</button>
-    </div>
+  return html`<div class="dashhome">
+    <div class="card">
+      <div class="sec-head">
+        <div class="sec-title">${community.name}</div>
+        <div class="contribrow">
+          ${active.slice(0, 7).map((m) => html`<${Avatar} profile=${m.profile} size="lg" />`)}
+          <button class="addbtn" title="Invite members" onClick=${() => go("dashboard/members")}>+</button>
+        </div>
+      </div>
 
-    <div class="stats">
+      <div class="stats">
       <div class="stat">
         <div class="lab">Members</div>
         <div class="num">${active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
@@ -132,12 +135,13 @@ function DashHome({ client, community, flash, go }) {
         </div>
         <div class="num money">${money(ledgerSum)}</div>
       </div>
+      </div>
     </div>
 
     <div class="dashcols">
-      <div>
-        <div class="pagehead">
-          <div class="section-label" style="margin:0">Upcoming Events</div>
+      <div class="card">
+        <div class="sec-head">
+          <div class="sec-title">Upcoming events</div>
           <button class="btn pill" onClick=${() => go("dashboard/events")}>create new</button>
         </div>
         <div class="evlist">
@@ -154,9 +158,9 @@ function DashHome({ client, community, flash, go }) {
           ${events.length > 4 && html`<button class="seeall" onClick=${() => go("dashboard/events")}>see all ${events.length}</button>`}
         </div>
       </div>
-      <div>
-        <div class="pagehead">
-          <div class="section-label" style="margin:0">Points of Interest</div>
+      <div class="card">
+        <div class="sec-head">
+          <div class="sec-title">Points of interest</div>
           <span class="muted tiny">${pois.length}</span>
         </div>
         <div class="poigrid">

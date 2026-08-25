@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl } from "./ui.js?v=2";
-import { EMOJI } from "./emoji-data.js?v=2";
+import { html, Modal, uploadMedia, mediaUrl } from "./ui.js?v=3";
+import { EMOJI } from "./emoji-data.js?v=3";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, moneyExact, money, niceDate, todayStr } from "./ui.js?v=2";
+import { html, Modal, moneyExact, money, niceDate, todayStr } from "./ui.js?v=3";
 
 /* Phase 1 money = display-only: a manual ledger of income (event fees, POI
    partnerships, other), plus computed membership revenue. Stripe comes later. */
