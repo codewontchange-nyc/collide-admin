@@ -1,11 +1,11 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=5";
-import { Dashboard } from "./dashboard.js?v=5";
-import { SharedMap } from "./sharedmap.js?v=5";
-import { Overview } from "./overview.js?v=5";
-import { DataPage } from "./datatable.js?v=5";
+import { html, Avatar, money } from "./ui.js?v=6";
+import { Dashboard } from "./dashboard.js?v=6";
+import { SharedMap } from "./sharedmap.js?v=6";
+import { Overview } from "./overview.js?v=6";
+import { DataPage } from "./datatable.js?v=6";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up

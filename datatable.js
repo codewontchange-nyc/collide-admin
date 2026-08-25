@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=5";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=6";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -186,37 +186,74 @@ function EditCell({ row, col, ctx, onSave }) {
     ref=${(el) => el && setTimeout(() => { el.focus(); if (el.select) el.select(); }, 0)} />`;
 }
 
-/* members need person+community chosen before the row can exist (composite key) */
+/* invoke the invite edge function (service-role emails + membership) and
+   surface its real error message instead of the generic FunctionsHttpError */
+export async function sendInvite(client, body) {
+  const { data, error } = await client.functions.invoke("invite", { body });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).error || msg; } catch { /* keep generic */ }
+    return { error: msg };
+  }
+  return data || { ok: true };
+}
+
+/* members need person+community chosen before the row can exist (composite
+   key). Two paths: invite somebody new by email (sends the branded magic-link
+   invite + attaches them), or add an existing profile directly. */
 function AddMemberModal({ client, ctx, flash, onClose, onSaved }) {
-  const [f, setF] = useState({ profile_id: "", community_id: ctx.communities[0]?.id || "", status: "member" });
+  const [mode, setMode] = useState("email");
+  const [f, setF] = useState({ email: "", profile_id: "", community_id: ctx.communities[0]?.id || "", status: "member" });
+  const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = async (e) => {
     e.preventDefault();
-    if (!f.profile_id || !f.community_id) { flash("Pick a person and a community"); return; }
-    const { error } = await client.from("community_members").insert({ ...f, joined_at: new Date().toISOString() });
+    if (!f.community_id) { flash("Pick a community"); return; }
+    setBusy(true);
+    if (mode === "email") {
+      const r = await sendInvite(client, { email: f.email, kind: "member", community_id: f.community_id });
+      setBusy(false);
+      if (r.error) { flash(r.error); return; }
+      flash(r.existing ? "They already had an account — added, sign-in link sent 💌" : "Invite sent 💌");
+      onSaved();
+      return;
+    }
+    if (!f.profile_id) { setBusy(false); flash("Pick a person"); return; }
+    const { error } = await client.from("community_members").insert({
+      community_id: f.community_id, profile_id: f.profile_id, status: f.status, joined_at: new Date().toISOString() });
+    setBusy(false);
     if (error) { flash(error.message.includes("duplicate") ? "They're already in that community" : error.message); return; }
     flash("Member added ✓"); onSaved();
   };
   return html`<${Modal} title="Add member" onClose=${onClose}>
+    <div class="subnav" style="margin-bottom:14px">
+      <button class=${mode === "email" ? "on" : ""} onClick=${() => setMode("email")}>✉️ Invite by email</button>
+      <button class=${mode === "existing" ? "on" : ""} onClick=${() => setMode("existing")}>Add existing person</button>
+    </div>
     <form onSubmit=${save}>
-      <div class="field"><label>Person</label>
-        <select required value=${f.profile_id} onChange=${set("profile_id")}>
-          <option value="">Choose…</option>
-          ${profOpts(ctx).map((o) => html`<option value=${o.v}>${o.l}</option>`)}
-        </select></div>
+      ${mode === "email"
+        ? html`<div class="field"><label>Email</label>
+            <input type="email" required placeholder="them@email.com" value=${f.email} onInput=${set("email")} />
+            <p class="tiny muted" style="margin:6px 0 0">They'll get a branded invite with a magic sign-in link that opens the app in this community.</p>
+          </div>`
+        : html`<div class="field"><label>Person</label>
+            <select required value=${f.profile_id} onChange=${set("profile_id")}>
+              <option value="">Choose…</option>
+              ${profOpts(ctx).map((o) => html`<option value=${o.v}>${o.l}</option>`)}
+            </select></div>`}
       <div class="fieldrow">
         <div class="field"><label>Community</label>
           <select required value=${f.community_id} onChange=${set("community_id")}>
             ${ctx.communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
           </select></div>
-        <div class="field"><label>Status</label>
+        ${mode === "existing" && html`<div class="field"><label>Status</label>
           <select value=${f.status} onChange=${set("status")}>
             <option value="member">member</option><option value="pending">pending</option>
-          </select></div>
+          </select></div>`}
       </div>
       <div class="actions">
         <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-        <button class="btn">Add member</button>
+        <button class="btn" disabled=${busy}>${busy ? "Sending…" : (mode === "email" ? "Send invite" : "Add member")}</button>
       </div>
     </form>
   </${Modal}>`;

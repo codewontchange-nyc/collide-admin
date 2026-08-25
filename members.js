@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate } from "./ui.js?v=5";
+import { html, Avatar, Modal, niceDate } from "./ui.js?v=6";
+import { sendInvite } from "./datatable.js?v=6";
 
 const APP_URL = "https://codewontchange-nyc.github.io/Collide";
 
@@ -60,22 +61,54 @@ export function MembersPage({ client, community, isOwner, flash }) {
     </table>
     ${rows.length === 0 && html`<div class="empty" style="margin-top:12px">No members yet — share the invite link 💌</div>`}
 
-    ${inviteOpen && html`<${Modal} title="Invite members" onClose=${() => setInviteOpen(false)}>
-      <p class="muted">Share this link — it opens <b>${community.name}</b> in the Collide app:</p>
-      <div class="field"><input readonly value=${`${APP_URL}/c/${community.id}`} onFocus=${(e) => e.target.select()} /></div>
-      <div class="actions">
-        <button class="btn" onClick=${() => { navigator.clipboard?.writeText(`${APP_URL}/c/${community.id}`); flash("Link copied 📋"); }}>Copy link</button>
-      </div>
-    </${Modal}>`}
+    ${inviteOpen && html`<${InviteModal} client=${client} community=${community} flash=${flash}
+      onClose=${() => setInviteOpen(false)} onSaved=${() => { setInviteOpen(false); load(); }} />`}
 
     ${staffOpen && html`<${StaffModal} client=${client} community=${community} staff=${staff} flash=${flash}
       onClose=${() => { setStaffOpen(false); load(); }} />`}
   </div>`;
 }
 
-/* Owner-only: manage who can use this console for this community. */
+/* Members: invite by email (branded magic-link invite, auto-added to this
+   community) — the share link stays as a fallback. */
+function InviteModal({ client, community, flash, onClose, onSaved }) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const link = `${APP_URL}/c/${community.id}`;
+  const send = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const r = await sendInvite(client, { email, kind: "member", community_id: community.id });
+    setBusy(false);
+    if (r.error) { flash(r.error); return; }
+    flash(r.existing ? "They already had an account — added, sign-in link sent 💌" : "Invite sent 💌");
+    onSaved();
+  };
+  return html`<${Modal} title="Invite members" onClose=${onClose}>
+    <form onSubmit=${send}>
+      <div class="field"><label>Invite by email</label>
+        <div style="display:flex;gap:10px">
+          <input style="flex:1" type="email" required placeholder="them@email.com" value=${email} onInput=${(e) => setEmail(e.target.value)} />
+          <button class="btn" disabled=${busy}>${busy ? "Sending…" : "Send invite"}</button>
+        </div>
+        <p class="tiny muted" style="margin:6px 0 0">They get a branded email with a magic sign-in link and land in <b>${community.name}</b> already a member.</p>
+      </div>
+    </form>
+    <div style="border-top:1px solid var(--line);margin:16px 0 12px"></div>
+    <p class="muted tiny" style="margin:0 0 8px">Or share this link — it opens <b>${community.name}</b> in the Collide app:</p>
+    <div class="field"><input readonly value=${link} onFocus=${(e) => e.target.select()} /></div>
+    <div class="actions">
+      <button class="btn ghost" onClick=${() => { navigator.clipboard?.writeText(link); flash("Link copied 📋"); }}>Copy link</button>
+    </div>
+  </${Modal}>`;
+}
+
+/* Owner-only: manage who can use this console for this community.
+   Adding routes through the invite function → staff row + the special
+   facilitator email with a magic link into the console. */
 function StaffModal({ client, community, staff, flash, onClose }) {
   const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState(staff);
 
   const reload = async () => {
@@ -86,9 +119,12 @@ function StaffModal({ client, community, staff, flash, onClose }) {
     e.preventDefault();
     const em = email.trim().toLowerCase();
     if (!em) return;
-    const { error } = await client.from("staff").insert({ email: em, role: "facilitator", community_id: community.id });
-    if (error) flash(error.message);
-    else { flash("Facilitator added — they can sign in now"); setEmail(""); reload(); }
+    setBusy(true);
+    const r = await sendInvite(client, { email: em, kind: "facilitator", community_id: community.id });
+    setBusy(false);
+    if (r.error) { flash(r.error); return; }
+    flash(r.existing ? "Added to staff — sign-in link sent to their inbox 💌" : "Facilitator invite sent 💌");
+    setEmail(""); reload();
   };
   const drop = async (r) => {
     if (r.role === "owner") { flash("Owners can't be removed here"); return; }
@@ -99,7 +135,7 @@ function StaffModal({ client, community, staff, flash, onClose }) {
   return html`<${Modal} title=${`Facilitators — ${community.name}`} onClose=${onClose}>
     <form onSubmit=${add} style="display:flex;gap:10px;margin-bottom:14px">
       <input style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px" type="email" placeholder="facilitator@email.com" value=${email} onInput=${(e) => setEmail(e.target.value)} />
-      <button class="btn">Add</button>
+      <button class="btn" disabled=${busy}>${busy ? "Sending…" : "Invite"}</button>
     </form>
     <table class="table"><tbody>
       ${rows.map((r) => html`<tr>
