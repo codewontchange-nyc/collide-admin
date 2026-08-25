@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl } from "./ui.js?v=6";
-import { EMOJI } from "./emoji-data.js?v=6";
+import { html, Modal, uploadMedia, mediaUrl } from "./ui.js?v=7";
+import { EMOJI } from "./emoji-data.js?v=7";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -257,7 +257,8 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
     place: pin.place || "", note: pin.note || "", link: pin.link || "", venue: pin.venue || "",
     name: pin.name || "", category: pin.category || "", notes: pin.notes || "",
     address: pin.address || "", hours: pin.hours || "",
-    community_id: pin.community_id || community?.id || communities[0]?.id || "",
+    // existing pins keep their real owner ("" = Collide/public); new ones default to the picked community
+    community_id: pin._new ? (community?.id || communities[0]?.id || "") : (pin.community_id || ""),
   });
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState(null);
@@ -270,13 +271,12 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
     setBusy(true);
     try {
       if (kind === "poi") {
-        if (!f.community_id) throw new Error("Pick a community for this POI");
         let image_path = pin.image_path || null;
         if (file) image_path = await uploadMedia(client, "poi", file);
         const uploaded = [];
         for (const gf of galleryFiles) uploaded.push(await uploadMedia(client, "poi", gf));
         const row = { name: f.name.trim() || "POI", category: f.category.trim() || null,
-          notes: f.notes.trim() || null, community_id: f.community_id, image_path,
+          notes: f.notes.trim() || null, community_id: f.community_id || null, image_path,
           address: f.address.trim() || null, hours: f.hours.trim() || null,
           link: f.link.trim() || null, images: [...gallery, ...uploaded] };
         if (isNew) {
@@ -327,9 +327,10 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
           <div class="field"><label>Name</label><input required value=${f.name} onInput=${set("name")} placeholder="Our Fav Coffee" /></div>
           <div class="field"><label>Category</label><input value=${f.category} onInput=${set("category")} placeholder="Coffee · Trail · Food…" /></div>
         </div>
-        <div class="field"><label>Community</label>
+        <div class="field"><label>Owner</label>
           <select value=${f.community_id} onChange=${set("community_id")}>
-            ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+            <option value="">🌍 Collide (public — everyone sees it)</option>
+            ${communities.map((c) => html`<option value=${c.id}>${c.name} (members only)</option>`)}
           </select></div>
         <div class="field"><label>Notes</label><input value=${f.notes} onInput=${set("notes")} placeholder="Why this spot matters" /></div>
         <div class="fieldrow">
