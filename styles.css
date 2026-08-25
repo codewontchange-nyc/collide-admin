@@ -58,7 +58,7 @@ a { color: inherit; }
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; gap: 26px; padding: 14px 28px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: rgba(255,255,255,.94); backdrop-filter: blur(8px); z-index: 40; }
-.wordmark { font: 600 22px Fraunces, serif; letter-spacing: -.5px; margin-right: 4px; }
+.wordmark { font: 500 25px 'Cormorant Garamond', Georgia, serif; text-transform: lowercase; letter-spacing: .005em; margin-right: 4px; }
 .nav { display: flex; gap: 20px; flex: 1; }
 .nav button { background: none; border: 0; padding: 8px 2px; color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent; }
 .nav button.on { color: var(--ink); border-bottom-color: var(--ink); }
