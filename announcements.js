@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar } from "./ui.js?v=10";
+import { html, Avatar } from "./ui.js?v=11";
 
 /* The front page's loudest feature, manageable from the desk.
    Facilitators hold ONE live announcement (posting replaces it — the DB

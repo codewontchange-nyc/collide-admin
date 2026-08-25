@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=10";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=11";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -63,7 +63,8 @@ const commName = (ctx, id, noneLabel) => (id ? (ctx.communities.find((c) => c.id
 const SCHEMAS = {
   communities: {
     table: "communities",
-    newLabel: null,   // creation lives in Settings (it seeds the owner's membership too)
+    newLabel: "+ New community",
+    modalCreate: true,   // name/city/etc chosen up front; owner membership seeded
     load: (client) => client.from("communities").select("*").order("created_at"),
     match: (q, r) => q.eq("id", r.id),
     metrics: (rows) => [
@@ -270,6 +271,52 @@ export async function sendInvite(client, body) {
   return data || { ok: true };
 }
 
+/* new community from the god view — same seeding as Settings: the creator
+   becomes owner and lands in the roster; reload refreshes the pickers */
+function AddCommunityModal({ client, ctx, flash, onClose }) {
+  const [f, setF] = useState({ name: "", emoji: "", city: "nyc", description: "", price: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const { data, error } = await client.from("communities").insert({
+      name: f.name.trim(),
+      emoji: f.emoji.trim() || null,
+      city: f.city,
+      description: f.description.trim() || null,
+      membership_price_cents: Math.round((parseFloat(f.price) || 0) * 100),
+      owner_id: ctx.session.user.id,
+    }).select().single();
+    if (error) { setBusy(false); flash(error.message); return; }
+    // put the creator in the roster too
+    await client.from("community_members").insert({ community_id: data.id, profile_id: ctx.session.user.id, status: "member" }).then(() => {});
+    flash("Community created 🎉");
+    setTimeout(() => location.reload(), 600);   // refresh pickers everywhere
+  };
+  return html`<${Modal} title="New community" onClose=${onClose}>
+    <form onSubmit=${save}>
+      <div class="fieldrow">
+        <div class="field" style="flex:0 0 90px"><label>Emoji</label><input value=${f.emoji} onInput=${set("emoji")} placeholder="🏘️" /></div>
+        <div class="field"><label>Name</label><input required value=${f.name} onInput=${set("name")} placeholder="Oyster Expedition" /></div>
+      </div>
+      <div class="fieldrow">
+        <div class="field"><label>City</label>
+          <select value=${f.city} onChange=${set("city")}>
+            ${CITIES.map(([v, l]) => html`<option value=${v}>${l}</option>`)}
+          </select></div>
+        <div class="field"><label>Membership $ / month</label>
+          <input type="number" min="0" step="0.01" value=${f.price} onInput=${set("price")} placeholder="0" /></div>
+      </div>
+      <div class="field"><label>Description</label><input value=${f.description} onInput=${set("description")} placeholder="What this crew is about" /></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
+        <button class="btn" disabled=${busy}>${busy ? "Creating…" : "Create community"}</button>
+      </div>
+    </form>
+  </${Modal}>`;
+}
+
 /* members need person+community chosen before the row can exist (composite
    key). Two paths: invite somebody new by email (sends the branded magic-link
    invite + attaches them), or add an existing profile directly. */
@@ -455,7 +502,9 @@ export function DataPage({ client, communities, session, flash, sub }) {
     </div>
     <p class="tiny muted" style="margin-top:8px">${filtered.length} row${filtered.length === 1 ? "" : "s"} · every cell is editable — click one; changes go live in the app instantly.</p>
 
-    ${adding && html`<${AddMemberModal} client=${client} ctx=${ctx} flash=${flash}
-      onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`}
+    ${adding && (tab === "communities"
+      ? html`<${AddCommunityModal} client=${client} ctx=${ctx} flash=${flash} onClose=${() => setAdding(false)} />`
+      : html`<${AddMemberModal} client=${client} ctx=${ctx} flash=${flash}
+          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`)}
   </div>`;
 }
