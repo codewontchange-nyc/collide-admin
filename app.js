@@ -1,10 +1,11 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=3";
-import { Dashboard } from "./dashboard.js?v=3";
-import { SharedMap } from "./sharedmap.js?v=3";
-import { Overview } from "./overview.js?v=3";
+import { html, Avatar, money } from "./ui.js?v=4";
+import { Dashboard } from "./dashboard.js?v=4";
+import { SharedMap } from "./sharedmap.js?v=4";
+import { Overview } from "./overview.js?v=4";
+import { DataPage } from "./datatable.js?v=4";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -20,16 +21,18 @@ window.CA = { client };   // debug/test hook
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map" };
+const PAGES = ["overview", "dashboard", "map", "data"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
+const DATA_SUBS = ["announcements", "events", "members"];
 
 const routeNow = () => {
   const parts = (location.hash || "").replace(/^#\/?/, "").split("/");
   let p = parts[0] || "", sub = parts[1] || "";
   if (DASH_SUBS.includes(p)) { sub = p; p = "dashboard"; }   // legacy top-level links
   if (!PAGES.includes(p)) return { page: "overview", sub: "" };
-  return { page: p, sub: p === "dashboard" && DASH_SUBS.includes(sub) ? sub : "" };
+  const subs = p === "dashboard" ? DASH_SUBS : p === "data" ? DATA_SUBS : [];
+  return { page: p, sub: subs.includes(sub) ? sub : "" };
 };
 
 function Login({ onSent, sent, error }) {
@@ -158,7 +161,7 @@ function App() {
     <div class="topbar">
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
-        ${PAGES.map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
+        ${PAGES.filter((p) => p !== "data" || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
       </div>
       ${page === "dashboard" && barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
       ${page === "dashboard" && communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)} title="Viewing this community's slice — how its facilitators see the platform">
@@ -172,6 +175,10 @@ function App() {
         ? html`<${Overview} ...${ctx} />`    /* platform level — every community, never toggled */
         : page === "map"
         ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
+        : page === "data"
+        ? (isOwner
+          ? html`<${DataPage} ...${ctx} sub=${route.sub} />`  /* god view — owners only */
+          : html`<div class="empty">The Data tables are owner-only.</div>`)
         : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
         : html`<${Dashboard} ...${ctx} sub=${route.sub} />`}

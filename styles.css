@@ -235,6 +235,35 @@ a { color: inherit; }
   display: grid; place-items: center; font: 600 11px var(--display); color: var(--ink);
   box-shadow: 0 2px 8px rgba(18,14,12,.25); }
 
+/* ---------- Data page: airtable-style god-view grid ---------- */
+.dt-metrics { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.metric { background: var(--paper); border-radius: var(--r-sm); padding: 7px 14px 8px; min-width: 74px; }
+.metric .n { font: 500 20px/1.1 var(--display); letter-spacing: -.3px; }
+.metric .l { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.dt-search { border: 1.5px solid var(--line); border-radius: 999px; padding: 7px 14px; background: var(--surface); outline: none; width: 210px; font-size: 12.5px; }
+.dt-search:focus { border-color: var(--teal); }
+
+.dt-wrap { overflow: auto; max-height: calc(100vh - 275px); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.dt { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 860px; font-size: 12.5px; }
+.dt th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); text-align: left;
+  font-size: 10px; color: var(--ink-2); font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); cursor: pointer; white-space: nowrap; user-select: none; }
+.dt th:last-child { border-right: 0; cursor: default; }
+.dt th:hover { color: var(--ink); }
+.dt th.wide { min-width: 260px; }
+.dt td { padding: 0; border-bottom: 1px solid var(--line); border-right: 1px solid #f5efe7; vertical-align: middle; }
+.dt td:last-child { border-right: 0; text-align: center; }
+.dt tr:last-child td { border-bottom: 0; }
+.dt tbody tr:hover td { background: #fdfaf5; }
+.dt .cellv { padding: 6px 10px; min-height: 30px; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px; }
+.dt td.wide .cellv { white-space: normal; }
+.dt td.editable .cellv { cursor: text; border-radius: 6px; }
+.dt td.editable .cellv:hover { box-shadow: inset 0 0 0 1.5px var(--teal); background: var(--surface); }
+.dt td input, .dt td select { width: 100%; min-width: 110px; border: 1.5px solid var(--teal); border-radius: 6px;
+  padding: 5px 9px; font: inherit; outline: none; background: var(--surface); box-shadow: var(--shadow-1); }
+.dt-del { background: none; border: 0; color: var(--faint); font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+.dt-del:hover { color: var(--danger); background: var(--rose-soft); }
+
 /* ---------- dashboard sub-nav: app-style chips ---------- */
 .subnav { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
 .subnav button { background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px;
