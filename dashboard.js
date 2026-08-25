@@ -1,11 +1,29 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js";
+import { EventsPage } from "./events.js";
+import { AnnouncementsPage } from "./announcements.js";
+import { MembersPage } from "./members.js";
+import { MoneyPage } from "./money.js";
+import { SettingsPage } from "./settings.js";
+import { PartnershipsPage } from "./partnerships.js";
 
-/* Community dashboard: the LIVE app (phone-sized, signed in as you — same
-   origin, shared session) on the left; contributors, stats, events and the
-   POI grid to the right. */
+/* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
+   on the left, and every facilitator section as a tab on the right — all of
+   it scoped to the community picked in the top bar. This is the exact slice
+   a facilitator sees when they log in; the Map keeps its own page because
+   it's shared app-wide. */
 
 const PHONE_W = 390, PHONE_H = 844;   // standard HD device points
+
+const TABS = [
+  ["home", "Dashboard"],
+  ["announcements", "Announcements"],
+  ["events", "Events"],
+  ["members", "Members"],
+  ["money", "Money"],
+  ["settings", "Settings"],
+  ["partnerships", "Partnerships"],
+];
 
 function PhonePreview() {
   const wrap = useRef(null);
@@ -29,7 +47,28 @@ function PhonePreview() {
   </div>`;
 }
 
-export function Dashboard({ client, community, session, flash, go }) {
+export function Dashboard(props) {
+  const { go, sub, community } = props;
+  const tab = TABS.some(([k]) => k === sub) ? sub : "home";
+  return html`<div class="dash2">
+    <${PhonePreview} />
+    <div class="dash-right">
+      <div class="subnav">
+        ${TABS.map(([k, label]) => html`<button class=${tab === k ? "on" : ""}
+          onClick=${() => go(k === "home" ? "dashboard" : "dashboard/" + k)}>${label}</button>`)}
+      </div>
+      ${tab === "home" ? html`<${DashHome} key=${community.id} ...${props} />`
+        : tab === "announcements" ? html`<${AnnouncementsPage} key=${community.id} ...${props} />`
+        : tab === "events" ? html`<${EventsPage} key=${community.id} ...${props} />`
+        : tab === "members" ? html`<${MembersPage} key=${community.id} ...${props} />`
+        : tab === "money" ? html`<${MoneyPage} key=${community.id} ...${props} />`
+        : tab === "settings" ? html`<${SettingsPage} key=${community.id} ...${props} />`
+        : html`<${PartnershipsPage} key=${community.id} ...${props} />`}
+    </div>
+  </div>`;
+}
+
+function DashHome({ client, community, flash, go }) {
   const [members, setMembers] = useState([]);
   const [events, setEvents] = useState([]);
   const [pois, setPois] = useState([]);
@@ -69,67 +108,64 @@ export function Dashboard({ client, community, session, flash, go }) {
   const ledgerSum = ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
 
-  return html`<div class="dash2">
-    <${PhonePreview} />
-    <div class="dash-right">
-      <div class="section-label">Contributors</div>
-      <div class="contribrow">
-        ${active.slice(0, 7).map((m) => html`<${Avatar} profile=${m.profile} size="lg" />`)}
-        <button class="addbtn" title="Invite members" onClick=${() => go("members")}>+</button>
-      </div>
+  return html`<div>
+    <div class="section-label">Contributors</div>
+    <div class="contribrow">
+      ${active.slice(0, 7).map((m) => html`<${Avatar} profile=${m.profile} size="lg" />`)}
+      <button class="addbtn" title="Invite members" onClick=${() => go("dashboard/members")}>+</button>
+    </div>
 
-      <div class="stats">
-        <div class="stat">
-          <div class="lab">Members</div>
-          <div class="num">${active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
+    <div class="stats">
+      <div class="stat">
+        <div class="lab">Members</div>
+        <div class="num">${active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
+      </div>
+      <div class="stat">
+        <div class="lab">Memberships <span class="muted">${money(community.membership_price_cents || 0)}</span></div>
+        <div class="num money">${money(membershipMo)}<span class="unit">mo</span></div>
+      </div>
+      <div class="stat">
+        <div class="lab">Events ${"&"} POI
+          <span class="dwm">
+            ${["D", "W", "M"].map((w) => html`<button class=${win === w ? "on" : ""} onClick=${() => setWin(w)}>${w}</button>`)}
+          </span>
         </div>
-        <div class="stat">
-          <div class="lab">Memberships <span class="muted">${money(community.membership_price_cents || 0)}</span></div>
-          <div class="num money">${money(membershipMo)}<span class="unit">mo</span></div>
+        <div class="num money">${money(ledgerSum)}</div>
+      </div>
+    </div>
+
+    <div class="dashcols">
+      <div>
+        <div class="pagehead">
+          <div class="section-label" style="margin:0">Upcoming Events</div>
+          <button class="btn pill" onClick=${() => go("dashboard/events")}>create new</button>
         </div>
-        <div class="stat">
-          <div class="lab">Events ${"&"} POI
-            <span class="dwm">
-              ${["D", "W", "M"].map((w) => html`<button class=${win === w ? "on" : ""} onClick=${() => setWin(w)}>${w}</button>`)}
-            </span>
-          </div>
-          <div class="num money">${money(ledgerSum)}</div>
+        <div class="evlist">
+          ${events.slice(0, 4).map((e) => html`<div class="evcard" onClick=${() => go("dashboard/events")} style="cursor:pointer">
+            ${e.image_path
+              ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />`
+              : html`<div class="thumb">🗓️</div>`}
+            <div>
+              <div class="t">${e.title}</div>
+              <div class="d">${niceDate(e.date || "")}${e.starts_at ? " · " + niceTime(e.starts_at) : ""}${e.location ? " · " + e.location : ""}</div>
+            </div>
+          </div>`)}
+          ${events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}
+          ${events.length > 4 && html`<button class="seeall" onClick=${() => go("dashboard/events")}>see all ${events.length}</button>`}
         </div>
       </div>
-
-      <div class="dashcols">
-        <div>
-          <div class="pagehead">
-            <div class="section-label" style="margin:0">Upcoming Events</div>
-            <button class="btn pill" onClick=${() => go("events")}>create new</button>
-          </div>
-          <div class="evlist">
-            ${events.slice(0, 4).map((e) => html`<div class="evcard" onClick=${() => go("events")} style="cursor:pointer">
-              ${e.image_path
-                ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />`
-                : html`<div class="thumb">🗓️</div>`}
-              <div>
-                <div class="t">${e.title}</div>
-                <div class="d">${niceDate(e.date || "")}${e.starts_at ? " · " + niceTime(e.starts_at) : ""}${e.location ? " · " + e.location : ""}</div>
-              </div>
-            </div>`)}
-            ${events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}
-            ${events.length > 4 && html`<button class="seeall" onClick=${() => go("events")}>see all ${events.length}</button>`}
-          </div>
+      <div>
+        <div class="pagehead">
+          <div class="section-label" style="margin:0">Points of Interest</div>
+          <span class="muted tiny">${pois.length}</span>
         </div>
-        <div>
-          <div class="pagehead">
-            <div class="section-label" style="margin:0">Points of Interest</div>
-            <span class="muted tiny">${pois.length}</span>
-          </div>
-          <div class="poigrid">
-            ${pois.slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
-              <div class="disc">${p.image_path ? html`<img src=${mediaUrl(client, p.image_path)} alt="" />` : "📍"}</div>
-              <div class="n">${p.name}</div>
-              ${p.category && html`<div class="c">${p.category}</div>`}
-            </div>`)}
-            ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
-          </div>
+        <div class="poigrid">
+          ${pois.slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
+            <div class="disc">${p.image_path ? html`<img src=${mediaUrl(client, p.image_path)} alt="" />` : "📍"}</div>
+            <div class="n">${p.name}</div>
+            ${p.category && html`<div class="c">${p.category}</div>`}
+          </div>`)}
+          ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
         </div>
       </div>
     </div>

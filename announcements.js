@@ -17,10 +17,13 @@ const left = (iso) => {
   return m < 60 ? `${m}m left` : `${Math.round(m / 60)}h left`;
 };
 
-export function AnnouncementsPage({ client, communities, isOwner, session, flash }) {
+/* Scoped to the community picked in the top bar (the facilitator slice):
+   shows that community's announcements plus globals. Owners can still post
+   a global from here. */
+export function AnnouncementsPage({ client, communities, community, isOwner, session, flash }) {
   const [rows, setRows] = useState([]);
   const [body, setBody] = useState("");
-  const [scope, setScope] = useState(isOwner ? "global" : (communities[0]?.id || ""));
+  const [scope, setScope] = useState(community?.id || (isOwner ? "global" : (communities[0]?.id || "")));
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -28,8 +31,10 @@ export function AnnouncementsPage({ client, communities, isOwner, session, flash
       .select("*, author:profiles!announcements_author_id_fkey(id,display_name,avatar_url)")
       .order("created_at", { ascending: false }).limit(100);
     const now = Date.now();
-    setRows((data || []).filter((a) => !a.expires_at || new Date(a.expires_at) > now));
-  }, [client]);
+    setRows((data || []).filter((a) =>
+      (!a.expires_at || new Date(a.expires_at) > now) &&
+      (!community || !a.community_id || a.community_id === community.id)));
+  }, [client, community?.id]);
   useEffect(() => { load(); }, [load]);
 
   const cname = (id) => communities.find((c) => c.id === id)?.name || "…";
@@ -68,7 +73,7 @@ export function AnnouncementsPage({ client, communities, isOwner, session, flash
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
         <select class="field" style="max-width:240px" value=${scope} onChange=${(e) => setScope(e.target.value)}>
           ${isOwner && html`<option value="global">🌍 Everyone (global)</option>`}
-          ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+          ${(community ? [community] : communities).map((c) => html`<option value=${c.id}>${c.name}</option>`)}
         </select>
         <button class="btn" disabled=${busy || !body.trim()} onClick=${post}>
           ${busy ? "Posting…" : (!isOwner && mineLive ? "Replace yours" : "Post")}

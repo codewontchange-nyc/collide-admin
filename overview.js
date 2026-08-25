@@ -50,7 +50,8 @@ export function Overview({ client, communities, flash, go, pickComm }) {
     pending: stats.reduce((a, s) => a + s.pending, 0),
   };
 
-  const open = (id, page = "dashboard") => { pickComm(id); go(page); };
+  // Drilling into a community lands on its facilitator dashboard (or a tab of it)
+  const open = (id, sub = "") => { pickComm(id); go("dashboard" + (sub ? "/" + sub : "")); };
 
   return html`<div>
     <div class="pagehead">
@@ -63,7 +64,7 @@ export function Overview({ client, communities, flash, go, pickComm }) {
       ${stats.map(({ c, count, pending, thisWeek, prevWeek, evs }) => {
         const delta = thisWeek - prevWeek;
         return html`<div class="ovcard" key=${c.id}>
-          <div class="ovhead" onClick=${() => open(c.id)}>
+          <div class="ovhead" onClick=${() => open(c.id, "")}>
             <span class="ovemoji">${c.emoji || "🏘️"}</span>
             <div style="flex:1;min-width:0">
               <div class="ovname">${c.name}</div>

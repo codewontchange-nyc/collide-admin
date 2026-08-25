@@ -3,11 +3,6 @@ import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
 import { html, Avatar, money } from "./ui.js";
 import { Dashboard } from "./dashboard.js";
-import { EventsPage } from "./events.js";
-import { AnnouncementsPage } from "./announcements.js";
-import { MembersPage } from "./members.js";
-import { MoneyPage } from "./money.js";
-import { SettingsPage } from "./settings.js";
 import { SharedMap } from "./sharedmap.js";
 import { Overview } from "./overview.js";
 
@@ -21,12 +16,20 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
 
-const PAGES = ["overview", "dashboard", "map", "announcements", "events", "members", "money", "settings"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", announcements: "Announcements", events: "Events", members: "Members", money: "Money", settings: "Settings" };
+/* Three worlds: Overview (platform-level, every community), Dashboard (ONE
+   community's slice — exactly what a facilitator gets when they log in,
+   toggled by the community picker), and the shared Map (app-wide). All the
+   facilitator sections live as tabs inside Dashboard. */
+const PAGES = ["overview", "dashboard", "map"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map" };
+const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
 
 const routeNow = () => {
-  const p = (location.hash || "").replace(/^#\/?/, "").split("/")[0];
-  return PAGES.includes(p) ? p : "overview";   // home = the all-communities overview
+  const parts = (location.hash || "").replace(/^#\/?/, "").split("/");
+  let p = parts[0] || "", sub = parts[1] || "";
+  if (DASH_SUBS.includes(p)) { sub = p; p = "dashboard"; }   // legacy top-level links
+  if (!PAGES.includes(p)) return { page: "overview", sub: "" };
+  return { page: p, sub: p === "dashboard" && DASH_SUBS.includes(sub) ? sub : "" };
 };
 
 function Login({ onSent, sent, error }) {
@@ -66,7 +69,8 @@ function App() {
   const [staffRows, setStaffRows] = useState(undefined); // undefined = loading
   const [communities, setCommunities] = useState([]);
   const [commId, setCommId] = useState(localStorage.getItem("ca.comm") || "");
-  const [page, setPage] = useState(routeNow());
+  const [route, setRoute] = useState(routeNow());
+  const page = route.page;
   const [profile, setProfile] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -113,7 +117,7 @@ function App() {
 
   /* ---- routing ---- */
   useEffect(() => {
-    const onHash = () => setPage(routeNow());
+    const onHash = () => setRoute(routeNow());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -155,10 +159,9 @@ function App() {
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
         ${PAGES.map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
-        <button disabled title="Coming soon">Partnerships</button>
       </div>
-      ${barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
-      ${communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)}>
+      ${page === "dashboard" && barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
+      ${page === "dashboard" && communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)} title="Viewing this community's slice — how its facilitators see the platform">
         ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
       </select>`}
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
@@ -166,19 +169,12 @@ function App() {
     </div>
     <div class="main">
       ${page === "overview"
-        ? html`<${Overview} ...${ctx} />`    /* all communities — no selection needed */
+        ? html`<${Overview} ...${ctx} />`    /* platform level — every community, never toggled */
         : page === "map"
         ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
-        : page === "announcements"
-        ? html`<${AnnouncementsPage} ...${ctx} />` /* announcements are app-wide too */
         : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
-        : page === "dashboard" ? html`<${Dashboard} ...${ctx} />`
-        : page === "events" ? html`<${EventsPage} ...${ctx} />`
-        : page === "members" ? html`<${MembersPage} ...${ctx} />`
-        : page === "money" ? html`<${MoneyPage} ...${ctx} />`
-        : html`<${SettingsPage} ...${ctx} />`}
-      ${isOwner && page === "settings" && null}
+        : html`<${Dashboard} ...${ctx} sub=${route.sub} />`}
     </div>
     ${toast && html`<div class="toast">${toast}</div>`}
   </div>`;
