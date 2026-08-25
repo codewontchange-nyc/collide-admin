@@ -3,6 +3,13 @@ import htm from "https://esm.sh/htm@3.1.1";
 
 export const html = htm.bind(h);
 
+/* city roster — mirrors the app's map cities (nyc live, others being inked) */
+export const CITIES = [
+  ["nyc", "New York"], ["atl", "Atlanta"], ["la", "Los Angeles"], ["chi", "Chicago"],
+  ["sf", "San Francisco"], ["nola", "New Orleans"], ["dc", "Washington DC"],
+];
+export const cityName = (id) => (CITIES.find(([k]) => k === id)?.[1] || id || "—");
+
 /* ---------- formatting ---------- */
 export const money = (cents) =>
   "$" + (Math.round(cents / 100)).toLocaleString("en-US");

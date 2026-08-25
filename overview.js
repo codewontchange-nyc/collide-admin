@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr } from "./ui.js?v=8";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=9";
 
 /* Owner home: every community at a glance — members (with week-over-week
    movement), pending join requests, and upcoming events. RLS scopes the
@@ -32,7 +32,9 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   }, [client, communities.map((c) => c.id).join()]);
 
   const now = Date.now();
-  const stats = communities.map((c) => {
+  const living = communities.filter((c) => !c.archived_at);
+  const archived = communities.filter((c) => c.archived_at);
+  const stats = living.map((c) => {
     const mine = members.filter((m) => m.community_id === c.id);
     const active = mine.filter((m) => m.status !== "pending");
     const pending = mine.length - active.length;
@@ -59,7 +61,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   return html`<div>
     <div class="pagehead">
       <h2 style="margin:0;font:600 24px Fraunces,serif">All communities</h2>
-      <div class="muted tiny">${communities.length} communities · ${totals.members} members
+      <div class="muted tiny">${living.length} communities · ${totals.members} members
         ${totals.thisWeek > 0 && html` · <span style="color:var(--green);font-weight:600">+${totals.thisWeek} this week</span>`}
         · ${totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
     </div>
@@ -80,7 +82,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
           <div class="ovhead" onClick=${() => open(c.id, "")}>
             <span class="ovemoji">${c.emoji || "🏘️"}</span>
             <div style="flex:1;min-width:0">
-              <div class="ovname">${c.name}</div>
+              <div class="ovname">${c.name} <span class="citychip">${cityName(c.city || "nyc")}</span></div>
               ${c.description && html`<div class="ovdesc">${c.description}</div>`}
             </div>
           </div>
@@ -114,7 +116,11 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
           </div>
         </div>`;
       })}
-      ${communities.length === 0 && html`<div class="empty" style="grid-column:1/-1">No communities yet — create one in Settings.</div>`}
+      ${living.length === 0 && html`<div class="empty" style="grid-column:1/-1">No communities yet — create one in Settings.</div>`}
     </div>
+    ${isOwner && archived.length > 0 && html`<div class="archived-row">
+      🗂 Archived: ${archived.map((c) => `${c.name} (${cityName(c.city || "nyc")})`).join(" · ")}
+      <button class="linkbtn tiny" onClick=${() => go("data/communities")}>manage →</button>
+    </div>`}
   </div>`;
 }

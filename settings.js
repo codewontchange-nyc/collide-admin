@@ -1,11 +1,12 @@
 import { useState } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal } from "./ui.js?v=8";
+import { html, Modal, CITIES } from "./ui.js?v=9";
 
 export function SettingsPage({ client, community, isOwner, session, flash }) {
   const [f, setF] = useState({
     name: community.name || "",
     description: community.description || "",
     price: community.membership_price_cents ? (community.membership_price_cents / 100) : "",
+    city: community.city || "nyc",
   });
   const [creating, setCreating] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -16,6 +17,7 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
       name: f.name.trim(),
       description: f.description.trim() || null,
       membership_price_cents: Math.round((parseFloat(f.price) || 0) * 100),
+      city: f.city,
     }).eq("id", community.id);
     if (error) flash(error.message);
     else { flash("Saved — refresh to see it everywhere"); }
@@ -26,6 +28,11 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
     <form onSubmit=${save}>
       <div class="field"><label>Community name</label><input required value=${f.name} onInput=${set("name")} /></div>
       <div class="field"><label>Description</label><textarea rows="3" value=${f.description} onInput=${set("description")}></textarea></div>
+      <div class="field"><label>City</label>
+        <select value=${f.city} onChange=${set("city")}>
+          ${CITIES.map(([v, l]) => html`<option value=${v}>${l}</option>`)}
+        </select>
+        <p class="tiny muted" style="margin:5px 0 0">Members see this community on its city's map.</p></div>
       <div class="field"><label>Membership price ($ / month, display-only for now)</label>
         <input type="number" min="0" step="0.01" value=${f.price} onInput=${set("price")} placeholder="5" /></div>
       <div class="actions" style="justify-content:flex-start">

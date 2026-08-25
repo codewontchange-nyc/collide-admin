@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=8";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=9";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -8,7 +8,7 @@ import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=8
    dates, money, and select-pickers for community, author and member
    (RLS is the real permission gate; this page is only offered to owners). */
 
-const TABS = [["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"]];
+const TABS = [["communities", "Communities"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"]];
 
 const short = (iso) => {
   if (!iso) return "—";
@@ -61,6 +61,38 @@ const profOpts = (ctx) => ctx.profiles.map((p) => ({ v: p.id, l: p.display_name 
 const commName = (ctx, id, noneLabel) => (id ? (ctx.communities.find((c) => c.id === id)?.name || "?") : noneLabel);
 
 const SCHEMAS = {
+  communities: {
+    table: "communities",
+    newLabel: null,   // creation lives in Settings (it seeds the owner's membership too)
+    load: (client) => client.from("communities").select("*").order("created_at"),
+    match: (q, r) => q.eq("id", r.id),
+    metrics: (rows) => [
+      ["total", rows.length],
+      ["active", rows.filter((r) => !r.archived_at).length],
+      ["archived", rows.filter((r) => r.archived_at).length],
+      ["cities", new Set(rows.filter((r) => !r.archived_at).map((r) => r.city || "nyc")).size],
+    ],
+    cols: [
+      { key: "emoji", label: "", type: "text", edit: true },
+      { key: "name", label: "Community", type: "text", edit: true, wide: true },
+      { key: "city", label: "City", type: "select", edit: true,
+        options: () => CITIES.map(([v, l]) => ({ v, l })), get: (r) => cityName(r.city || "nyc") },
+      { key: "description", label: "Description", type: "text", edit: true },
+      { key: "membership_price_cents", label: "Price/mo", type: "money", edit: true },
+      { key: "created_at", label: "Created", type: "dt" },
+      { key: "archived_at", label: "Status", get: (r) => (r.archived_at ? "archived" : "active"),
+        cell: (r) => r.archived_at
+          ? html`<span class="pillstat pending">🗂 archived ${short(r.archived_at)}</span>`
+          : html`<span class="pillstat member">active</span>` },
+    ],
+    rowAction: (r, api) => html`<button class="btn small ghost" onClick=${async () => {
+      const val = r.archived_at ? null : new Date().toISOString();
+      if (!r.archived_at && !confirm(`Archive "${r.name}"? It disappears from members' apps (POIs and announcements included) until restored. Staff keep console access.`)) return;
+      const { error } = await api.client.from("communities").update({ archived_at: val }).eq("id", r.id);
+      api.flash(error ? error.message : (val ? "Archived — hidden from the app 🗂" : "Restored — live again ✓"));
+      if (!error) api.reload();
+    }}>${r.archived_at ? "Restore" : "Archive"}</button>`,
+  },
   announcements: {
     table: "announcements",
     newLabel: "+ New announcement",
@@ -300,7 +332,7 @@ function AddMemberModal({ client, ctx, flash, onClose, onSaved }) {
 }
 
 export function DataPage({ client, communities, session, flash, sub }) {
-  const tab = TABS.some(([k]) => k === sub) ? sub : "announcements";
+  const tab = TABS.some(([k]) => k === sub) ? sub : "communities";
   const S = SCHEMAS[tab];
   const [rows, setRows] = useState(null);   // null = loading
   const [profiles, setProfiles] = useState([]);
@@ -354,8 +386,9 @@ export function DataPage({ client, communities, session, flash, sub }) {
 
   const filtered = useMemo(() => {
     let out = rows || [];
-    if (comm === "global") out = out.filter((r) => !r.community_id);
-    else if (comm) out = out.filter((r) => r.community_id === comm);
+    const commKey = tab === "communities" ? "id" : "community_id";
+    if (comm === "global") out = out.filter((r) => !r[commKey]);
+    else if (comm) out = out.filter((r) => r[commKey] === comm);
     if (q.trim()) {
       const n = q.trim().toLowerCase();
       out = out.filter((r) => JSON.stringify(r).toLowerCase().includes(n) ||

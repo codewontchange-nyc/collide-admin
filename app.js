@@ -1,11 +1,11 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=8";
-import { Dashboard } from "./dashboard.js?v=8";
-import { SharedMap } from "./sharedmap.js?v=8";
-import { Overview } from "./overview.js?v=8";
-import { DataPage } from "./datatable.js?v=8";
+import { html, Avatar, money } from "./ui.js?v=9";
+import { Dashboard } from "./dashboard.js?v=9";
+import { SharedMap } from "./sharedmap.js?v=9";
+import { Overview } from "./overview.js?v=9";
+import { DataPage } from "./datatable.js?v=9";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -24,7 +24,7 @@ window.CA = { client };   // debug/test hook
 const PAGES = ["overview", "dashboard", "map", "data"];
 const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
-const DATA_SUBS = ["announcements", "events", "members", "invites"];
+const DATA_SUBS = ["communities", "announcements", "events", "members", "invites"];
 
 const routeNow = () => {
   const parts = (location.hash || "").replace(/^#\/?/, "").split("/");
@@ -156,7 +156,9 @@ function App() {
       if (!live) return;
       setCommunities(comms || []);
       const saved = localStorage.getItem("ca.comm");
+      const living = (comms || []).filter((c) => !c.archived_at);
       if (saved && (comms || []).some((c) => c.id === saved)) setCommId(saved);
+      else if (living.length) setCommId(living[0].id);
       else if (comms && comms.length) setCommId(comms[0].id);
       const { data: prof } = await client.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       if (live) setProfile(prof || null);
@@ -211,7 +213,7 @@ function App() {
       </div>
       ${page === "dashboard" && barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
       ${page === "dashboard" && communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)} title="Viewing this community's slice — how its facilitators see the platform">
-        ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+        ${communities.filter((c) => !c.archived_at || c.id === commId).map((c) => html`<option value=${c.id}>${c.archived_at ? "🗂 " : ""}${c.name}</option>`)}
       </select>`}
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
