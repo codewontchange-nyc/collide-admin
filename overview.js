@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=9";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=10";
 
 /* Owner home: every community at a glance — members (with week-over-week
    movement), pending join requests, and upcoming events. RLS scopes the

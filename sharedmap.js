@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl } from "./ui.js?v=9";
-import { EMOJI } from "./emoji-data.js?v=9";
+import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=10";
+import { EMOJI } from "./emoji-data.js?v=10";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -104,6 +104,7 @@ const mapImageUrl = (client, path) => {
 };
 
 export function SharedMap({ client, session, flash, readonly = false, compact = false, community = null, communities = [] }) {
+  const [city, setCity] = useState(localStorage.getItem("ca.mapcity") || "nyc");
   const [cfg, setCfg] = useState(undefined);
   const [events, setEvents] = useState([]);
   const [comms, setComms] = useState([]);
@@ -112,18 +113,20 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   const wrap = useRef(null);
   const drag = useRef(null);
 
+  const pickCity = (c) => { localStorage.setItem("ca.mapcity", c); setCfg(undefined); setCity(c); };
+
   const load = useCallback(async () => {
     const [c, e, k, p] = await Promise.all([
-      client.from("map_config").select("*").eq("id", 1).maybeSingle(),
-      client.from("map_events").select("*").order("created_at"),
-      client.from("communities").select("id,name,emoji,x,y"),
-      client.from("pois").select("*"),
+      client.from("map_config").select("*").eq("city", city).maybeSingle(),
+      client.from("map_events").select("*").eq("city", city).order("created_at"),
+      client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
+      client.from("pois").select("*").eq("city", city),
     ]);
     setCfg(c.data || null);
     setEvents((e.data || []).filter(alive));
-    setComms((k.data || []).filter((r) => r.x != null && r.y != null));
+    setComms((k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at));
     setPois((p.data || []).filter((r) => r.x != null && r.y != null));
-  }, [client]);
+  }, [client, city]);
   useEffect(() => { load(); }, [load]);
 
   /* realtime: app edits appear here live, and vice versa */
@@ -184,12 +187,14 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     if (!file) return;
     try {
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `bg-${Date.now()}.${ext}`;
+      const path = `bg-${city}-${Date.now()}.${ext}`;
       const { error } = await client.storage.from("map").upload(path, file, { contentType: file.type || "image/jpeg", upsert: true });
       if (error) throw error;
-      const { error: e2 } = await client.from("map_config").update({ image_path: path, updated_at: new Date().toISOString() }).eq("id", 1);
+      // one artwork row per city — first upload opens the city
+      const { error: e2 } = await client.from("map_config").upsert(
+        { city, image_path: path, updated_at: new Date().toISOString() }, { onConflict: "city" });
       if (e2) throw e2;
-      flash("Map artwork updated 🗺️");
+      flash(`${cityName(city)} artwork updated 🗺️`);
       load();
     } catch (e) { flash(e.message || String(e)); }
   };
@@ -220,10 +225,13 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   return html`<div>
     ${!compact && html`<div class="pagehead">
       <h2 style="margin:0">Map <span class="muted" style="font:400 13px Inter">the same map members see — edits are live in the app</span></h2>
-      ${!readonly && html`<label class="btn ghost" style="cursor:pointer">Replace artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>`}
+      ${!readonly && html`<label class="btn ghost" style="cursor:pointer">${cfg ? "Replace" : "Upload"} ${cityName(city)} artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>`}
+    </div>`}
+    ${!compact && html`<div class="subnav" style="margin-bottom:12px">
+      ${CITIES.map(([k, label]) => html`<button class=${city === k ? "on" : ""} onClick=${() => pickCity(k)}>${label}</button>`)}
     </div>`}
     ${img === undefined ? html`<div class="empty">Loading map…</div>`
-      : !img ? html`<div class="empty">No map artwork yet — upload one 🗺️</div>`
+      : !img ? html`<div class="empty">No ${cityName(city)} artwork yet — the cartographer is still inking 🖋️<br/><span class="tiny muted">Upload artwork above to open this city's map.</span></div>`
       : html`<div class=${"smap" + (compact ? " compact" : "")} ref=${wrap} onClick=${onMapClick}>
           <img class="smap-img" src=${img} alt="Community map" draggable=${false}
             ref=${(el) => { if (el && el.complete && el.naturalWidth) setAspect(el.naturalWidth / el.naturalHeight); }}
@@ -243,12 +251,12 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
         </div>`}
     ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it · click a pin or dot to edit. POI dots are the small black circles.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
-      community=${community} communities=${communities}
+      community=${community} communities=${communities} city=${city}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
   </div>`;
 }
 
-function PinModal({ client, session, pin, flash, community, communities, onClose, onSaved }) {
+function PinModal({ client, session, pin, flash, community, communities, city = "nyc", onClose, onSaved }) {
   const isNew = !!pin._new;
   const isPoi = pin._kind === "poi";
   const [kind, setKind] = useState(isPoi ? "poi" : "event");
@@ -280,7 +288,7 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
           address: f.address.trim() || null, hours: f.hours.trim() || null,
           link: f.link.trim() || null, images: [...gallery, ...uploaded] };
         if (isNew) {
-          const { error } = await client.from("pois").insert({ ...row, x: pin.x, y: pin.y, created_by: session.user.id });
+          const { error } = await client.from("pois").insert({ ...row, x: pin.x, y: pin.y, city, created_by: session.user.id });
           if (error) throw error;
           flash("POI dotted 📍");
         } else {
@@ -291,7 +299,7 @@ function PinModal({ client, session, pin, flash, community, communities, onClose
       } else {
         const row = { emoji: f.emoji, title: f.title, at_time: f.at_time, place: f.place, note: f.note, link: f.link, venue: f.venue };
         if (isNew) {
-          const { error } = await client.from("map_events").insert({ ...row, x: pin.x, y: pin.y, expires_at: plus7d(), created_by: session.user.id });
+          const { error } = await client.from("map_events").insert({ ...row, x: pin.x, y: pin.y, city, expires_at: plus7d(), created_by: session.user.id });
           if (error) throw error;
           flash("Pin dropped — live in the app 🎉");
         } else {
