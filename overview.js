@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr } from "./ui.js?v=7";
+import { html, money, niceDate, todayStr } from "./ui.js?v=8";
 
 /* Owner home: every community at a glance — members (with week-over-week
    movement), pending join requests, and upcoming events. RLS scopes the
@@ -9,21 +9,24 @@ import { html, money, niceDate, todayStr } from "./ui.js?v=7";
 const DAY = 864e5;
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
-export function Overview({ client, communities, flash, go, pickComm }) {
+export function Overview({ client, communities, isOwner, flash, go, pickComm }) {
   const [members, setMembers] = useState([]);
   const [events, setEvents] = useState([]);
+  const [openInvites, setOpenInvites] = useState(0);
 
   useEffect(() => {
     let live = true;
     (async () => {
-      const [m, e] = await Promise.all([
+      const [m, e, inv] = await Promise.all([
         client.from("community_members").select("community_id, profile_id, status, joined_at"),
         client.from("activities").select("id, community_id, title, date, at_time, place, location, when_bucket, expires_at")
           .not("community_id", "is", null).order("date", { ascending: true, nullsFirst: false }).limit(500),
+        client.from("invites").select("*", { count: "exact", head: true }).is("accepted_at", null),
       ]);
       if (!live) return;
       setMembers(m.data || []);
       setEvents((e.data || []).filter((ev) => !expired(ev) && (!ev.date || ev.date >= todayStr())));
+      setOpenInvites(inv.count || 0);
     })();
     return () => { live = false; };
   }, [client, communities.map((c) => c.id).join()]);
@@ -60,6 +63,16 @@ export function Overview({ client, communities, flash, go, pickComm }) {
         ${totals.thisWeek > 0 && html` · <span style="color:var(--green);font-weight:600">+${totals.thisWeek} this week</span>`}
         · ${totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
     </div>
+    ${(totals.pending > 0 || (isOwner && openInvites > 0)) && html`<div class="attention">
+      <span class="attention-label">🔔 Needs attention</span>
+      ${totals.pending > 0 && html`<button class="attention-chip" onClick=${() => {
+        const c = stats.find((s) => s.pending > 0);
+        if (isOwner) go("data/members");
+        else if (c) { pickComm(c.c.id); go("dashboard/members"); }
+      }}>${totals.pending} pending join request${totals.pending === 1 ? "" : "s"} →</button>`}
+      ${isOwner && openInvites > 0 && html`<button class="attention-chip" onClick=${() => go("data/invites")}>
+        ${openInvites} unaccepted invite${openInvites === 1 ? "" : "s"} →</button>`}
+    </div>`}
     <div class="ovgrid">
       ${stats.map(({ c, count, pending, thisWeek, prevWeek, evs }) => {
         const delta = thisWeek - prevWeek;

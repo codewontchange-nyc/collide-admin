@@ -93,6 +93,18 @@ Deno.serve(async (req) => {
       userId = inv.user?.id ?? null;
     }
 
+    // funnel: record the invite (resends bump attempts + sent_at)
+    let priorQ = admin.from("invites").select("id,attempts").eq("email", em).eq("kind", kind);
+    priorQ = community_id === null ? priorQ.is("community_id", null) : priorQ.eq("community_id", community_id);
+    const { data: prior } = await priorQ.maybeSingle();
+    if (prior) {
+      await admin.from("invites").update({
+        sent_at: new Date().toISOString(), attempts: (prior.attempts || 1) + 1, invited_by: caller.email,
+      }).eq("id", prior.id);
+    } else {
+      await admin.from("invites").insert({ email: em, kind, community_id, invited_by: caller.email });
+    }
+
     // members: attach the profile (created by the on_auth_user_created trigger)
     if (kind === "member" && userId) {
       await admin.from("profiles").upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });

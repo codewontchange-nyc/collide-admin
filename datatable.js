@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=7";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=8";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -8,7 +8,7 @@ import { html, Avatar, Modal, moneyExact, niceTime, todayStr } from "./ui.js?v=7
    dates, money, and select-pickers for community, author and member
    (RLS is the real permission gate; this page is only offered to owners). */
 
-const TABS = [["announcements", "Announcements"], ["events", "Events"], ["members", "Members"]];
+const TABS = [["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"]];
 
 const short = (iso) => {
   if (!iso) return "—";
@@ -153,6 +153,45 @@ const SCHEMAS = {
       { key: "joined_at", label: "Joined", type: "dt", edit: true },
     ],
   },
+  invites: {
+    table: "invites",
+    newLabel: null,   // invites are sent from the member/facilitator modals
+    load: (client) => client.from("invites").select("*").order("sent_at", { ascending: false }).limit(1000),
+    match: (q, r) => q.eq("id", r.id),
+    // revoking an unaccepted facilitator invite also pulls their staff key
+    afterDelete: async (client, r) => {
+      if (r.kind === "facilitator" && !r.accepted_at) {
+        let q = client.from("staff").delete().eq("email", r.email).neq("role", "owner");
+        q = r.community_id === null ? q.is("community_id", null) : q.eq("community_id", r.community_id);
+        await q;
+      }
+    },
+    metrics: (rows) => [
+      ["sent", rows.length],
+      ["accepted", rows.filter((r) => r.accepted_at).length],
+      ["awaiting", rows.filter((r) => !r.accepted_at).length],
+      ["accept rate", rows.length ? Math.round(rows.filter((r) => r.accepted_at).length / rows.length * 100) + "%" : "—"],
+    ],
+    cols: [
+      { key: "email", label: "Invited", wide: true },
+      { key: "kind", label: "Kind", get: (r) => r.kind,
+        cell: (r) => html`<span class=${"pillstat " + (r.kind === "facilitator" ? "facilitator" : "")}>${r.kind}</span>` },
+      { key: "community_id", label: "Community",
+        get: (r, ctx) => commName(ctx, r.community_id, r.kind === "facilitator" ? "all communities" : "—") },
+      { key: "invited_by", label: "Invited by" },
+      { key: "sent_at", label: "Sent", get: (r) => r.sent_at,
+        cell: (r) => html`${shortDT(r.sent_at)}${r.attempts > 1 && html` <span class="muted tiny">·×${r.attempts}</span>`}` },
+      { key: "accepted_at", label: "Status", get: (r) => r.accepted_at || "",
+        cell: (r) => r.accepted_at
+          ? html`<span class="pillstat member">accepted ${short(r.accepted_at)}</span>`
+          : html`<span class="pillstat pending">awaiting</span>` },
+    ],
+    rowAction: (r, api) => !r.accepted_at && html`<button class="btn small ghost" onClick=${async () => {
+      const res = await sendInvite(api.client, { email: r.email, kind: r.kind, community_id: r.community_id });
+      api.flash(res.error || "Invite re-sent 💌");
+      if (!res.error) api.reload();
+    }}>Resend</button>`,
+  },
 };
 
 function EditCell({ row, col, ctx, onSave }) {
@@ -160,6 +199,7 @@ function EditCell({ row, col, ctx, onSave }) {
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState("");
   const shown = col.cell ? col.cell(row, ctx) : (col.get ? col.get(row, ctx) : t.fmt(row[col.key]));
+  if (!col.edit) return html`<div class="cellv">${shown}</div>`;
   if (!editing) {
     return html`<div class="cellv" onClick=${() => { setV(t.toIn(row[col.key])); setEditing(true); }}>${shown}</div>`;
   }
@@ -300,6 +340,7 @@ export function DataPage({ client, communities, session, flash, sub }) {
     if (!confirm(`Delete "${name}"? This removes it from the live app.`)) return;
     const { error } = await S.match(client.from(S.table).delete(), row);
     if (error) { flash(error.message); return; }
+    if (S.afterDelete) await S.afterDelete(client, row);
     setRows((rs) => rs.filter((r) => r !== row));
     flash("Deleted");
   };
@@ -347,7 +388,7 @@ export function DataPage({ client, communities, session, flash, sub }) {
     <div class="dt-metrics">
       ${metrics.map(([l, n]) => html`<div class="metric"><div class="n">${rows === null ? "…" : n}</div><div class="l">${l}</div></div>`)}
       <div style="flex:1"></div>
-      <button class="btn small" onClick=${addNew}>${S.newLabel}</button>
+      ${S.newLabel && html`<button class="btn small" onClick=${addNew}>${S.newLabel}</button>`}
       <input class="dt-search" placeholder="Search ${tab}…" value=${q} onInput=${(e) => setQ(e.target.value)} />
       <select class="commselect" value=${comm} onChange=${(e) => setComm(e.target.value)}>
         <option value="">All communities</option>
@@ -369,7 +410,10 @@ export function DataPage({ client, communities, session, flash, sub }) {
             ${S.cols.map((c) => html`<td class=${"editable" + (c.wide ? " wide" : "")}>
               <${EditCell} row=${r} col=${c} ctx=${ctx} onSave=${(k, v) => save(r, k, v)} />
             </td>`)}
-            <td><button class="dt-del" title="Delete" onClick=${() => del(r)}>✕</button></td>
+            <td><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end;padding-right:4px">
+              ${S.rowAction && S.rowAction(r, { client, flash, reload: load })}
+              <button class="dt-del" title="Delete" onClick=${() => del(r)}>✕</button>
+            </div></td>
           </tr>`)}
         </tbody>
       </table>

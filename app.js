@@ -1,11 +1,11 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=7";
-import { Dashboard } from "./dashboard.js?v=7";
-import { SharedMap } from "./sharedmap.js?v=7";
-import { Overview } from "./overview.js?v=7";
-import { DataPage } from "./datatable.js?v=7";
+import { html, Avatar, money } from "./ui.js?v=8";
+import { Dashboard } from "./dashboard.js?v=8";
+import { SharedMap } from "./sharedmap.js?v=8";
+import { Overview } from "./overview.js?v=8";
+import { DataPage } from "./datatable.js?v=8";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -24,7 +24,7 @@ window.CA = { client };   // debug/test hook
 const PAGES = ["overview", "dashboard", "map", "data"];
 const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
-const DATA_SUBS = ["announcements", "events", "members"];
+const DATA_SUBS = ["announcements", "events", "members", "invites"];
 
 const routeNow = () => {
   const parts = (location.hash || "").replace(/^#\/?/, "").split("/");
@@ -34,6 +34,52 @@ const routeNow = () => {
   const subs = p === "dashboard" ? DASH_SUBS : p === "data" ? DATA_SUBS : [];
   return { page: p, sub: subs.includes(sub) ? sub : "" };
 };
+
+/* ---- web push: the console is itself a push client ---- */
+const VAPID_PUBLIC = "BI1Xp1ZvZNopnjJcUYUl7ZoK99SlCzIkq8yXGo3FT0tJALblL1EkseSrZKzixa-kIxYBviIQsA6QTV_-F_e5Ttg";
+const b64ToU8 = (s) => {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+
+function PushBell({ session, flash }) {
+  const [state, setState] = useState("checking");   // checking | unsupported | off | on | busy
+  useEffect(() => {
+    (async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setState("unsupported"); return; }
+      const reg = await navigator.serviceWorker.register("sw.js");
+      const sub = await reg.pushManager.getSubscription();
+      setState(sub ? "on" : "off");
+    })().catch(() => setState("unsupported"));
+  }, []);
+  const toggle = async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (state === "on") {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) { await client.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
+        setState("off"); flash("Push notifications off");
+        return;
+      }
+      setState("busy");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setState("off"); flash("Notifications blocked by the browser"); return; }
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC) });
+      const j = sub.toJSON();
+      const { error } = await client.from("push_subscriptions").upsert({
+        profile_id: session.user.id, endpoint: sub.endpoint,
+        p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent,
+      }, { onConflict: "endpoint" });
+      if (error) throw error;
+      setState("on"); flash("Push on — announcements will reach this device 🔔");
+    } catch (e) { setState("off"); flash(e.message || String(e)); }
+  };
+  if (state === "checking" || state === "unsupported") return null;
+  return html`<button class="linkbtn" disabled=${state === "busy"} onClick=${toggle}
+    title=${state === "on" ? "Push is on — click to turn off" : "Turn on push notifications"}
+    style=${"text-decoration:none;font-size:16px;padding:0;opacity:" + (state === "on" ? "1" : ".4")}>🔔</button>`;
+}
 
 function Login({ onSent, sent, error }) {
   const [email, setEmail] = useState("");
@@ -167,6 +213,7 @@ function App() {
       ${page === "dashboard" && communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)} title="Viewing this community's slice — how its facilitators see the platform">
         ${communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
       </select>`}
+      <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
       <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
     </div>
