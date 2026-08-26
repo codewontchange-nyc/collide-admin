@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=11";
+import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=12";
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 

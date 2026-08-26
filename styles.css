@@ -243,6 +243,26 @@ a { color: inherit; }
   padding: 5px 13px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .attention-chip:hover { border-color: var(--amber); }
 
+/* ---------- CRM: funnel board, campaign editor, touch log ---------- */
+.crm-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1300px) { .crm-cols { grid-template-columns: repeat(2, 1fr); } }
+.crm-colhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.crm-stageno { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--rose); color: #fff; font: 700 12px var(--body); vertical-align: middle; margin-right: 2px; }
+.crm-count { font: 500 24px var(--display); letter-spacing: -.5px; }
+.crm-user { display: flex; gap: 9px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+.crm-user .n { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crm-user .d { color: var(--muted); font-size: 11px; }
+.crm-step { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.crm-step input, .crm-step select, .crm-step textarea { border: 1.5px solid var(--line); border-radius: var(--r-sm);
+  padding: 6px 9px; font: inherit; background: var(--surface); outline: none; font-size: 12.5px; }
+.crm-step input:focus, .crm-step textarea:focus { border-color: var(--teal); }
+.crm-step .crm-day { width: 56px; }
+.crm-toggle { display: inline-flex; gap: 5px; align-items: center; font-size: 11px; font-weight: 700;
+  color: var(--muted); cursor: pointer; padding-top: 8px; }
+.crm-toggle input { accent-color: var(--teal); }
+.crm-touchrow { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+
 /* ---------- lifecycle: city chips + archived row ---------- */
 .citychip { display: inline-block; vertical-align: middle; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
   background: var(--teal-soft); color: var(--teal-ink); font: 600 10px var(--body); text-transform: uppercase; letter-spacing: .06em; }
