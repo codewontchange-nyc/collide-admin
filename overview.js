@@ -1,5 +1,36 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=13";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=14";
+
+/* Platform KPI strip — owner-only tiles above the community grid.
+   Numbers come from the platform_kpis() RPC (server-side, auth-aware);
+   deltas compare this week to last. */
+const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) + "%" : "—");
+function Delta({ now, prev }) {
+  const d = now - prev;
+  if (d === 0) return html`<span class="kpi-delta flat">— wk</span>`;
+  return html`<span class=${"kpi-delta " + (d > 0 ? "up" : "down")}>${d > 0 ? "▲" : "▼"}${Math.abs(d)} wk</span>`;
+}
+function KpiStrip({ k }) {
+  const tiles = [
+    { n: k.users_total, l: "users", d: html`<${Delta} now=${k.users_new_wk} prev=${k.users_new_prev} />` },
+    { n: k.wau, l: "active this wk", s: pct(k.wau, k.signed_in_total) + " of signed-in" },
+    { n: pct(k.activated, k.signed_in_total), l: "activated", s: "joined + RSVP'd" },
+    { n: k.fully_activated, l: "power users", s: "yapping 🎓" },
+    { n: k.rsvps_wk, l: "RSVPs", d: html`<${Delta} now=${k.rsvps_wk} prev=${k.rsvps_prev} />` },
+    { n: k.yaps_wk, l: "yaps", d: html`<${Delta} now=${k.yaps_wk} prev=${k.yaps_prev} />` },
+    { n: k.circles_wk, l: "new circles", d: html`<${Delta} now=${k.circles_wk} prev=${k.circles_prev} />` },
+    { n: k.events_upcoming, l: "events upcoming" },
+    { n: k.invites_sent > 0 ? pct(k.invites_accepted, k.invites_sent) : "—", l: "invite accept", s: `${k.invites_accepted}/${k.invites_sent} accepted` },
+    { n: money(k.mrr_cents), l: "revenue / mo", money: true },
+  ];
+  return html`<div class="kpis">
+    ${tiles.map((t) => html`<div class="kpi">
+      <div class=${"kpi-n" + (t.money ? " money" : "")}>${t.n}</div>
+      <div class="kpi-l">${t.l}${t.d || ""}</div>
+      ${t.s && html`<div class="kpi-s">${t.s}</div>`}
+    </div>`)}
+  </div>`;
+}
 
 /* Owner home: every community at a glance — members (with week-over-week
    movement), pending join requests, and upcoming events. RLS scopes the
@@ -13,20 +44,23 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   const [members, setMembers] = useState([]);
   const [events, setEvents] = useState([]);
   const [openInvites, setOpenInvites] = useState(0);
+  const [kpis, setKpis] = useState(null);   // null until the RPC answers (owner only)
 
   useEffect(() => {
     let live = true;
     (async () => {
-      const [m, e, inv] = await Promise.all([
+      const [m, e, inv, k] = await Promise.all([
         client.from("community_members").select("community_id, profile_id, status, joined_at"),
         client.from("activities").select("id, community_id, title, date, at_time, place, location, when_bucket, expires_at")
           .not("community_id", "is", null).order("date", { ascending: true, nullsFirst: false }).limit(500),
         client.from("invites").select("*", { count: "exact", head: true }).is("accepted_at", null),
+        client.rpc("platform_kpis"),
       ]);
       if (!live) return;
       setMembers(m.data || []);
       setEvents((e.data || []).filter((ev) => !expired(ev) && (!ev.date || ev.date >= todayStr())));
       setOpenInvites(inv.count || 0);
+      setKpis(k.data || null);
     })();
     return () => { live = false; };
   }, [client, communities.map((c) => c.id).join()]);
@@ -65,6 +99,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
         ${totals.thisWeek > 0 && html` · <span style="color:var(--green);font-weight:600">+${totals.thisWeek} this week</span>`}
         · ${totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
     </div>
+    ${kpis && html`<${KpiStrip} k=${kpis} />`}
     ${(totals.pending > 0 || (isOwner && openInvites > 0)) && html`<div class="attention">
       <span class="attention-label">🔔 Needs attention</span>
       ${totals.pending > 0 && html`<button class="attention-chip" onClick=${() => {
