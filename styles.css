@@ -235,15 +235,20 @@ a { color: inherit; }
   display: grid; place-items: center; font: 600 11px var(--display); color: var(--ink);
   box-shadow: 0 2px 8px rgba(18,14,12,.25); }
 
-/* ---------- overview platform KPI strip ---------- */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.kpi { background: var(--surface); border-radius: var(--r-sm); box-shadow: var(--shadow-1); padding: 10px 13px 11px; }
-.kpi-n { font: 500 24px/1.1 var(--display); letter-spacing: -.5px; }
+/* ---------- overview platform KPI strip: editorial masthead ----------
+   No chips — big Fraunces numerals straight on the paper, small-caps
+   labels above, hairline column rules, double rule up top (the same
+   newspaper motif as the invite email). Wraps into rows freely. */
+.kpis { display: flex; flex-wrap: wrap; row-gap: 22px; margin-bottom: 22px;
+  border-top: 3px double var(--ink); border-bottom: 1px solid var(--line); padding: 16px 0 18px; }
+.kpi { display: flex; flex-direction: column; padding: 0 28px; border-left: 1px solid var(--line); min-width: 118px; }
+.kpi:first-child { padding-left: 2px; border-left: 0; }
+.kpi-n { font: 500 42px/1.05 var(--display); letter-spacing: -1.5px; color: var(--ink); order: 2; }
 .kpi-n.money { color: var(--teal-ink); }
-.kpi-l { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-top: 3px;
-  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-.kpi-s { font-size: 10.5px; color: var(--faint); margin-top: 2px; }
-.kpi-delta { font: 700 10px var(--body); text-transform: none; letter-spacing: 0; }
+.kpi-l { font: 700 11px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: .09em;
+  order: 1; margin-bottom: 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.kpi-s { font: italic 400 12.5px var(--display); color: var(--muted); order: 3; margin-top: 4px; }
+.kpi-delta { font: 700 10.5px var(--body); text-transform: none; letter-spacing: 0; }
 .kpi-delta.up { color: var(--teal); }
 .kpi-delta.down { color: var(--danger); }
 .kpi-delta.flat { color: var(--faint); }
