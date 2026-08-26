@@ -244,8 +244,9 @@ a { color: inherit; }
 .attention-chip:hover { border-color: var(--amber); }
 
 /* ---------- CRM: funnel board, campaign editor, touch log ---------- */
-.crm-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
-@media (max-width: 1300px) { .crm-cols { grid-template-columns: repeat(2, 1fr); } }
+.crm-cols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 1500px) { .crm-cols { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 1000px) { .crm-cols { grid-template-columns: repeat(2, 1fr); } }
 .crm-colhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 .crm-stageno { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
   background: var(--rose); color: #fff; font: 700 12px var(--body); vertical-align: middle; margin-right: 2px; }

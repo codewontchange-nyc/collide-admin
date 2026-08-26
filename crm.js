@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=12";
+import { html, Avatar, cityName } from "./ui.js?v=13";
 
 /* CRM — watch users move down the maturity funnel and run the drip engine.
    Funnel: stages derived live from real actions (crm_users RPC). Campaigns:
@@ -8,6 +8,7 @@ import { html, Avatar, cityName } from "./ui.js?v=12";
 
 const TABS = [["funnel", "Funnel"], ["campaigns", "Campaigns"], ["activity", "Activity"]];
 const STAGES = [
+  [0, "Invited", "account created, never signed in — invite reminders chase acceptance"],
   [1, "Signed up", "hasn't joined or RSVP'd yet"],
   [2, "Joined & RSVP'd", "in a community or on a roster"],
   [3, "In a circle", "connected, hasn't yapped"],
@@ -80,8 +81,9 @@ function CampaignsTab({ client, flash }) {
   const add = async (stage) => {
     const step = Math.max(0, ...(rows || []).filter((r) => r.stage === stage).map((r) => r.step)) + 1;
     const { error } = await client.from("crm_campaigns").insert({
-      stage, step, day_offset: 1, channel: "push", enabled: false,
-      title: "New nudge ✏️", body: "Hey {{name}} — …",
+      stage, step, day_offset: 1, channel: stage === 0 ? "email" : "push", enabled: false,
+      title: stage === 0 ? `Invite reminder #${step}` : "New nudge ✏️",
+      body: stage === 0 ? "(re-sends their invite sign-in link)" : "Hey {{name}} — …",
     });
     if (error) flash(error.message); else { flash("Step added (disabled until you enable it)"); load(); }
   };
@@ -89,11 +91,12 @@ function CampaignsTab({ client, flash }) {
   if (rows === null) return html`<div class="empty" style="border:0">Loading…</div>`;
   return html`<div style="display:flex;flex-direction:column;gap:14px;max-width:860px">
     <p class="tiny muted" style="margin:0">Templates: <code>{{name}}</code> <code>{{city}}</code> <code>{{community}}</code> <code>{{event}}</code> — filled per user at send time. Guardrails: one touch per user per 48h, 10:00–20:00 local, staff and opt-outs skipped, drips stop the moment a user advances.</p>
-    ${STAGES.slice(0, 3).map(([n, label]) => html`<div class="card" key=${n}>
+    ${STAGES.slice(0, 4).map(([n, label]) => html`<div class="card" key=${n}>
       <div class="sec-head">
-        <div class="sec-title">Stage ${n} → ${n + 1} <span class="muted tiny" style="font-family:var(--body)">${label} → ${STAGES[n][1]}</span></div>
+        <div class="sec-title">Stage ${n} → ${n + 1} <span class="muted tiny" style="font-family:var(--body)">${label} → ${STAGES[n + 1][1]}</span></div>
         <button class="btn small ghost" onClick=${() => add(n)}>+ step</button>
       </div>
+      ${n === 0 && html`<p class="tiny muted" style="margin:0 0 4px">Reminders re-send the invitee's sign-in link (the branded invite template) — only the timing is edited here. Days count from the invite.</p>`}
       ${rows.filter((r) => r.stage === n).map((r) => html`<div class="crm-step" key=${r.id}>
         <label class="crm-toggle" title=${r.enabled ? "Live — click to pause" : "Paused — click to go live"}>
           <input type="checkbox" checked=${r.enabled} onChange=${(e) => save(r, { enabled: e.target.checked })} />
@@ -102,13 +105,16 @@ function CampaignsTab({ client, flash }) {
         <span class="tiny muted">day</span>
         <input class="crm-day" type="number" min="0" value=${r.day_offset}
           onChange=${(e) => save(r, { day_offset: parseInt(e.target.value) || 0 })} />
+        ${n === 0
+          ? html`<div style="flex:1;min-width:220px;padding-top:7px" class="tiny muted">✉️ ${r.title} — re-sends their invite sign-in link</div>`
+          : html`
         <select value=${r.channel} onChange=${(e) => save(r, { channel: e.target.value })}>
           ${CHANNELS.map((c) => html`<option value=${c}>${c === "push" ? "🔔 push" : c === "email" ? "✉️ email" : "🔔✉️ both"}</option>`)}
         </select>
         <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:5px">
           <input value=${r.title} placeholder="Title / subject" onChange=${(e) => save(r, { title: e.target.value })} />
           <textarea rows="2" value=${r.body} onChange=${(e) => save(r, { body: e.target.value })}></textarea>
-        </div>
+        </div>`}
         <button class="dt-del" title="Delete step" onClick=${() => del(r)}>✕</button>
       </div>`)}
       ${rows.filter((r) => r.stage === n).length === 0 && html`<div class="tiny muted">No steps — users at this stage get nothing.</div>`}

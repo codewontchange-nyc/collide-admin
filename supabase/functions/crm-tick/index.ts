@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     const { dry = false } = await req.json().catch(() => ({}));
 
     // ---- load the world once ----
-    const [funnel, staff, campaigns, touches, subs, memberships, comms, events] = await Promise.all([
+    const [funnel, staff, campaigns, touches, subs, memberships, comms, events, openInvites] = await Promise.all([
       admin.from("crm_funnel").select("*"),
       admin.from("staff").select("email"),
       admin.from("crm_campaigns").select("*").eq("enabled", true).order("stage").order("step"),
@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
       admin.from("communities").select("id, name, archived_at"),
       admin.from("activities").select("title, date, city").gte("date", new Date().toISOString().slice(0, 10))
         .order("date").limit(200),
+      admin.from("invites").select("*").is("accepted_at", null),
     ]);
     const staffEmails = new Set((staff.data || []).map((s) => s.email?.toLowerCase()));
     const { data: authUsers } = await admin.auth.admin.listUsers({ perPage: 1000 });
@@ -101,6 +102,12 @@ Deno.serve(async (req) => {
       const at = new Date(t.sent_at).getTime();
       if (at > (lastTouch.get(t.profile_id) || 0)) lastTouch.set(t.profile_id, at);
     }
+    const inviteByEmail = new Map<string, any>();
+    for (const i of openInvites.data || []) {
+      const k = i.email.toLowerCase();
+      // member invites carry the app redirect; prefer them when both exist
+      if (!inviteByEmail.has(k) || i.kind === "member") inviteByEmail.set(k, i);
+    }
 
     // ---- pick due touches ----
     const now = Date.now();
@@ -111,12 +118,32 @@ Deno.serve(async (req) => {
     for (const u of funnel.data || []) {
       if (u.stage >= 4) continue;                                     // graduated 🎓
       if (u.crm_opt_out) { skip("opt_out"); continue; }
-      if (staffEmails.has(emailById.get(u.id) || "")) { skip("staff"); continue; }
+      const email = emailById.get(u.id) || "";
       const daysIn = Math.floor((now - new Date(u.stage_entered_at).getTime()) / 864e5);
+      const last = lastTouch.get(u.id) || 0;
+
+      // ---- stage 0: invited, never signed in → invite reminders ----
+      // (staff invitees are included here — their invite is pending too)
+      if (u.stage === 0) {
+        const inv = inviteByEmail.get(email);
+        if (!inv) { skip("no_open_invite"); continue; }
+        const due = (campaigns.data || []).filter((c) =>
+          c.stage === 0 && c.day_offset <= daysIn && !touched.has(`${u.id}:${c.id}`));
+        if (!due.length) { skip("nothing_due"); continue; }
+        if (now - last < MIN_GAP_H * 36e5) { skip("too_soon"); continue; }
+        const hr = localHour(u.city);
+        if (hr < SEND_START || hr >= SEND_END) { skip("quiet_hours"); continue; }
+        planned.push({ u, c: due[0], kind: "reminder", invite: inv, email,
+          title: `Invite reminder → ${email}`, body: `re-send ${inv.kind} invite link` });
+        if (planned.length >= MAX_PER_RUN) break;
+        continue;
+      }
+
+      // ---- stages 1–3: product drips (staff excluded) ----
+      if (staffEmails.has(email)) { skip("staff"); continue; }
       const due = (campaigns.data || []).filter((c) =>
         c.stage === u.stage && c.day_offset <= daysIn && !touched.has(`${u.id}:${c.id}`));
       if (!due.length) { skip("nothing_due"); continue; }
-      const last = lastTouch.get(u.id) || 0;
       if (now - last < MIN_GAP_H * 36e5) { skip("too_soon"); continue; }
       const hr = localHour(u.city);
       if (hr < SEND_START || hr >= SEND_END) { skip("quiet_hours"); continue; }
@@ -132,13 +159,33 @@ Deno.serve(async (req) => {
 
     if (dry) {
       return json({ ok: true, dry: true, planned: planned.map((p) => ({
-        profile: p.u.display_name, stage: p.u.stage, step: p.c.step, channel: p.c.channel,
+        profile: p.u.display_name || p.email, stage: p.u.stage, step: p.c.step,
+        channel: p.kind === "reminder" ? "invite-reminder" : p.c.channel,
         title: p.title, body: p.body })), skipped });
     }
 
     // ---- deliver + log ----
-    let pushed = 0, dryEmails = 0;
+    let pushed = 0, dryEmails = 0, reminded = 0;
+    const anon = createClient(URL, Deno.env.get("SUPABASE_ANON_KEY")!);
     for (const p of planned) {
+      // invite reminders: re-send the magic sign-in link, bump the invite record
+      if (p.kind === "reminder") {
+        const redirectTo = p.invite.kind === "facilitator"
+          ? "https://codewontchange-nyc.github.io/collide-admin/" : APP_URL;
+        const { error: otpErr } = await anon.auth.signInWithOtp({ email: p.email, options: { emailRedirectTo: redirectTo } });
+        if (!otpErr) {
+          reminded++;
+          await admin.from("invites").update({
+            sent_at: new Date().toISOString(), attempts: (p.invite.attempts || 1) + 1,
+          }).eq("id", p.invite.id);
+        }
+        await admin.from("crm_touches").insert({
+          profile_id: p.u.id, campaign_id: p.c.id, stage: 0, step: p.c.step,
+          channel: "invite", title: p.title, body: p.body,
+          result: otpErr ? "error: " + otpErr.message : "reminder-sent",
+        });
+        continue;
+      }
       const results: string[] = [];
       const wantPush = p.c.channel === "push" || p.c.channel === "both";
       const wantEmail = p.c.channel === "email" || p.c.channel === "both";
@@ -166,7 +213,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json({ ok: true, touched: planned.length, pushed, dryEmails, skipped });
+    return json({ ok: true, touched: planned.length, pushed, dryEmails, reminded, skipped });
   } catch (e) {
     return json({ error: String((e as Error)?.message || e) }, 500);
   }
