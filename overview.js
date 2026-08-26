@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=14";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=15";
 
 /* Platform KPI strip — owner-only tiles above the community grid.
    Numbers come from the platform_kpis() RPC (server-side, auth-aware);
@@ -45,22 +45,26 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   const [events, setEvents] = useState([]);
   const [openInvites, setOpenInvites] = useState(0);
   const [kpis, setKpis] = useState(null);   // null until the RPC answers (owner only)
+  const [errors24, setErrors24] = useState(0);
 
   useEffect(() => {
     let live = true;
     (async () => {
-      const [m, e, inv, k] = await Promise.all([
+      const [m, e, inv, k, errs] = await Promise.all([
         client.from("community_members").select("community_id, profile_id, status, joined_at"),
         client.from("activities").select("id, community_id, title, date, at_time, place, location, when_bucket, expires_at")
           .not("community_id", "is", null).order("date", { ascending: true, nullsFirst: false }).limit(500),
         client.from("invites").select("*", { count: "exact", head: true }).is("accepted_at", null),
         client.rpc("platform_kpis"),
+        client.from("client_errors").select("*", { count: "exact", head: true })
+          .gte("created_at", new Date(Date.now() - 864e5).toISOString()),
       ]);
       if (!live) return;
       setMembers(m.data || []);
       setEvents((e.data || []).filter((ev) => !expired(ev) && (!ev.date || ev.date >= todayStr())));
       setOpenInvites(inv.count || 0);
       setKpis(k.data || null);
+      setErrors24(errs.count || 0);
     })();
     return () => { live = false; };
   }, [client, communities.map((c) => c.id).join()]);
@@ -100,7 +104,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
         · ${totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
     </div>
     ${kpis && html`<${KpiStrip} k=${kpis} />`}
-    ${(totals.pending > 0 || (isOwner && openInvites > 0)) && html`<div class="attention">
+    ${(totals.pending > 0 || (isOwner && openInvites > 0) || errors24 > 0) && html`<div class="attention">
       <span class="attention-label">🔔 Needs attention</span>
       ${totals.pending > 0 && html`<button class="attention-chip" onClick=${() => {
         const c = stats.find((s) => s.pending > 0);
@@ -109,6 +113,8 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
       }}>${totals.pending} pending join request${totals.pending === 1 ? "" : "s"} →</button>`}
       ${isOwner && openInvites > 0 && html`<button class="attention-chip" onClick=${() => go("data/invites")}>
         ${openInvites} unaccepted invite${openInvites === 1 ? "" : "s"} →</button>`}
+      ${errors24 > 0 && html`<button class="attention-chip" style="border-color:#f0cdc7;color:var(--danger)" onClick=${() => go("issues")}>
+        🐛 ${errors24} error${errors24 === 1 ? "" : "s"} in 24h →</button>`}
     </div>`}
     <div class="ovgrid">
       ${stats.map(({ c, count, pending, thisWeek, prevWeek, evs }) => {

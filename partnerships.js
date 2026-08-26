@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, moneyExact, niceDate, mediaUrl } from "./ui.js?v=14";
+import { html, money, moneyExact, niceDate, mediaUrl } from "./ui.js?v=15";
 
 /* Partnerships, phase 1: the community's POI partners at a glance plus the
    partner income already logged in the ledger (kind = "poi"). Formal deals —

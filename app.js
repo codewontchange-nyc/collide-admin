@@ -1,12 +1,13 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=14";
-import { Dashboard } from "./dashboard.js?v=14";
-import { SharedMap } from "./sharedmap.js?v=14";
-import { Overview } from "./overview.js?v=14";
-import { DataPage } from "./datatable.js?v=14";
-import { CRMPage } from "./crm.js?v=14";
+import { html, Avatar, money } from "./ui.js?v=15";
+import { Dashboard } from "./dashboard.js?v=15";
+import { SharedMap } from "./sharedmap.js?v=15";
+import { Overview } from "./overview.js?v=15";
+import { DataPage } from "./datatable.js?v=15";
+import { CRMPage } from "./crm.js?v=15";
+import { IssuesPage } from "./issues.js?v=15";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -22,8 +23,8 @@ window.CA = { client };   // debug/test hook
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map", "data", "crm"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM" };
+const PAGES = ["overview", "dashboard", "map", "data", "crm", "issues"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", issues: "Issues" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
 const DATA_SUBS = ["communities", "announcements", "events", "members", "invites"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
@@ -234,6 +235,8 @@ function App() {
         ? (isOwner
           ? html`<${CRMPage} ...${ctx} sub=${route.sub} />`   /* funnel + drips — owners only */
           : html`<div class="empty">The CRM is owner-only.</div>`)
+        : page === "issues"
+        ? html`<${IssuesPage} ...${ctx} />`   /* telemetry report — staff-visible, RLS-scoped */
         : !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
         : html`<${Dashboard} ...${ctx} sub=${route.sub} />`}
