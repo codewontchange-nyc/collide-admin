@@ -1,5 +1,5 @@
 import { useState } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, CITIES } from "./ui.js?v=17";
+import { html, Modal, CITIES } from "./ui.js?v=18";
 
 export function SettingsPage({ client, community, isOwner, session, flash }) {
   const [f, setF] = useState({

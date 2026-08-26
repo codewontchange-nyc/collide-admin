@@ -282,6 +282,22 @@ a { color: inherit; }
 .crm-toggle input { accent-color: var(--teal); }
 .crm-touchrow { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
 
+/* ---------- Up Next: blog hero + editorial prose ---------- */
+.story-hero { padding: 0; overflow: hidden; margin-bottom: 6px; }
+.story-hero-cover { width: 100%; max-height: 260px; object-fit: cover; display: block; }
+.story-hero-body { padding: 18px 22px 20px; }
+.story-kicker { font: 700 10.5px var(--body); color: var(--rose-ink); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+.story-hero-title { font: 600 26px/1.2 var(--display); letter-spacing: -.4px; margin: 0 0 8px; }
+.story-byline { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; flex-wrap: wrap; }
+.story-prose { font: 400 15px/1.65 var(--display); color: var(--ink); max-width: 620px; }
+.story-prose p { margin: 0 0 12px; }
+.story-prose h3 { font: 600 18px/1.3 var(--display); margin: 18px 0 8px; }
+.story-prose blockquote { margin: 12px 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--rose); font-style: italic; color: var(--ink-2); }
+.story-prose a { color: var(--teal-ink); text-underline-offset: 2px; }
+.story-preview { border: 1.5px dashed var(--line); border-radius: var(--r-sm); padding: 14px 16px; margin-bottom: 12px; min-height: 120px; background: var(--paper); }
+.story-strip { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; }
+.story-strip img { height: 74px; border-radius: 8px; flex: none; }
+
 /* ---------- Up Next: city journal stories ---------- */
 .story-row { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; padding: 13px 15px; }
 .story-cover { width: 108px; height: 76px; border-radius: var(--r-sm); object-fit: cover; flex: none;
