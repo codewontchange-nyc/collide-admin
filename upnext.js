@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=18";
+import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
+import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=19";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;
-   drafts are invisible until published. Lightweight formatting: blank line =
-   paragraph, ## heading, **bold**, *italic*, > quote, bare URLs become
-   links. storyHtml() is the renderer — the app embeds the same rules. */
+   drafts are invisible until published.
+
+   Writing is an INLINE editor: a contenteditable surface styled with the
+   exact .story-prose typography the reader sees — what you format is what
+   ships. Storage stays the lightweight text format (blank-line paragraphs,
+   ## heading, **bold**, *italic*, > quote); storyHtml() renders it and
+   domToStory() reads the editor back into it, so console and app agree. */
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 export const storyHtml = (body) => esc(body || "").split(/\n{2,}/).map((b) => {
@@ -20,6 +24,32 @@ export const storyHtml = (body) => esc(body || "").split(/\n{2,}/).map((b) => {
   return `<p>${inline(b.replace(/\n/g, "<br/>"))}</p>`;
 }).join("");
 
+/* read the contenteditable back into the stored format */
+const inlineText = (node) => {
+  let s = "";
+  node.childNodes.forEach((n) => {
+    if (n.nodeType === 3) s += n.textContent;
+    else if (n.nodeName === "B" || n.nodeName === "STRONG") s += `**${inlineText(n)}**`;
+    else if (n.nodeName === "I" || n.nodeName === "EM") s += `*${inlineText(n)}*`;
+    else if (n.nodeName === "BR") s += "\n";
+    else if (n.nodeName === "A") s += n.getAttribute("href") || inlineText(n);
+    else s += inlineText(n);
+  });
+  return s;
+};
+export const domToStory = (root) => {
+  const blocks = [];
+  root.childNodes.forEach((n) => {
+    if (n.nodeType === 3) { const t = n.textContent.trim(); if (t) blocks.push(t); return; }
+    const t = inlineText(n).replace(/ /g, " ").trim();
+    if (!t) return;
+    if (/^H[1-4]$/.test(n.nodeName)) blocks.push("## " + t);
+    else if (n.nodeName === "BLOCKQUOTE") blocks.push("> " + t);
+    else blocks.push(t);
+  });
+  return blocks.join("\n\n");
+};
+
 const nice = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "";
 const ago = (iso) => {
   if (!iso) return "";
@@ -32,7 +62,7 @@ export function UpNextPage({ client, session, flash }) {
   const [rows, setRows] = useState(null);
   const [editing, setEditing] = useState(null);   // null | {} (new) | story row
 
-  const pickCity = (c) => { localStorage.setItem("ca.storycity", c); setRows(null); setCity(c); };
+  const pickCity = (c) => { localStorage.setItem("ca.storycity", c); setRows(null); setEditing(null); setCity(c); };
 
   const load = useCallback(async () => {
     const { data, error } = await client.from("stories")
@@ -54,7 +84,7 @@ export function UpNextPage({ client, session, flash }) {
   const remove = async (s) => {
     if (!confirm(`Delete "${s.title}"? Members will see it disappear from Up next.`)) return;
     const { error } = await client.from("stories").delete().eq("id", s.id);
-    if (error) flash(error.message); else { flash("Deleted"); load(); }
+    if (error) flash(error.message); else { flash("Deleted"); if (editing?.id === s.id) setEditing(null); load(); }
   };
 
   const published = (rows || []).filter((r) => r.published)
@@ -72,11 +102,15 @@ export function UpNextPage({ client, session, flash }) {
   return html`<div class="page" style="max-width:820px">
     <div class="pagehead">
       <h2>Up Next <span class="muted" style="font:400 13px var(--body)">the city journal — the current post leads members' Up next feed</span></h2>
-      <button class="btn" onClick=${() => setEditing({})}>✍️ New post</button>
+      ${!editing && html`<button class="btn" onClick=${() => setEditing({})}>✍️ New post</button>`}
     </div>
     <div class="subnav" style="margin-bottom:16px">
       ${CITIES.map(([k, label]) => html`<button class=${city === k ? "on" : ""} onClick=${() => pickCity(k)}>${label}</button>`)}
     </div>
+
+    ${editing && html`<${InlineEditor} key=${editing.id || "new"} client=${client} session=${session} city=${city} flash=${flash}
+      story=${editing.id ? editing : null}
+      onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
 
     ${rows === null ? html`<div class="empty" style="border:0">Loading…</div>` : html`
       <div class="section-label">Current post — live in ${cityName(city)}</div>
@@ -120,23 +154,27 @@ export function UpNextPage({ client, session, flash }) {
         </div>
         <${Actions} s=${s} />
       </div>`)}`}
-
-    ${editing && html`<${StoryModal} client=${client} session=${session} city=${city} flash=${flash}
-      story=${editing.id ? editing : null}
-      onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
   </div>`;
 }
 
-function StoryModal({ client, session, city, story, flash, onClose, onSaved }) {
-  const [f, setF] = useState({
-    title: story?.title || "",
-    body: story?.body || "",
-    video_url: story?.video_url || "",
-  });
+/* the writing surface: same typography as the published hero, formatted live */
+function InlineEditor({ client, session, city, story, flash, onClose, onSaved }) {
+  const [title, setTitle] = useState(story?.title || "");
+  const [videoUrl, setVideoUrl] = useState(story?.video_url || "");
   const [images, setImages] = useState(story?.images || []);
-  const [tab, setTab] = useState("write");
   const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const prose = useRef(null);
+
+  useEffect(() => {
+    if (!prose.current) return;
+    try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch {}
+    prose.current.innerHTML = storyHtml(story?.body) || "<p><br/></p>";
+    prose.current.focus();
+  }, []);
+
+  // toolbar acts on the live selection; mousedown-preventDefault keeps it
+  const cmd = (fn) => (e) => { e.preventDefault(); fn(); prose.current?.focus(); };
+  const block = (tag) => document.execCommand("formatBlock", false, tag);
 
   const addImages = async (e) => {
     const files = [...(e.target.files || [])];
@@ -153,11 +191,12 @@ function StoryModal({ client, session, city, story, flash, onClose, onSaved }) {
   };
 
   const save = async (publish) => {
-    if (!f.title.trim()) { flash("Give it a title"); return; }
+    if (!title.trim()) { flash("Give it a title"); return; }
     setBusy(true);
+    const body = domToStory(prose.current);
     const row = {
-      title: f.title.trim(), body: f.body.trim() || null,
-      video_url: f.video_url.trim() || null, images, city,
+      title: title.trim(), body: body || null,
+      video_url: videoUrl.trim() || null, images, city,
       updated_at: new Date().toISOString(),
       ...(publish != null ? { published: publish, published_at: publish ? new Date().toISOString() : null } : {}),
     };
@@ -172,25 +211,27 @@ function StoryModal({ client, session, city, story, flash, onClose, onSaved }) {
     onSaved();
   };
 
-  return html`<${Modal} title=${story ? "Edit post" : `New post — ${cityName(city)}`} onClose=${onClose}>
-    <div class="field"><label>Title</label>
-      <input required value=${f.title} onInput=${set("title")} placeholder="The week ahead in ${cityName(city)}" /></div>
+  return html`<div class="card story-editor">
+    <div class="story-kicker">${story ? "Editing" : "New post"} · ${cityName(city)}</div>
+    <input class="story-edit-title" value=${title} onInput=${(e) => setTitle(e.target.value)}
+      placeholder="The week ahead in ${cityName(city)}" />
 
-    <div class="subnav" style="margin-bottom:10px">
-      <button class=${tab === "write" ? "on" : ""} onClick=${() => setTab("write")}>Write</button>
-      <button class=${tab === "preview" ? "on" : ""} onClick=${() => setTab("preview")}>Preview</button>
+    <div class="story-toolbar">
+      <button title="Paragraph" onMouseDown=${cmd(() => block("p"))}>¶</button>
+      <button title="Heading" onMouseDown=${cmd(() => block("h3"))} style="font-family:var(--display);font-weight:600">H</button>
+      <button title="Bold" onMouseDown=${cmd(() => document.execCommand("bold"))}><b>B</b></button>
+      <button title="Italic" onMouseDown=${cmd(() => document.execCommand("italic"))}><i>I</i></button>
+      <button title="Pull quote" onMouseDown=${cmd(() => block("blockquote"))}>❝</button>
+      <span class="tiny" style="color:var(--faint);margin-left:auto">formatted exactly as readers see it</span>
     </div>
-    ${tab === "write"
-      ? html`<div class="field">
-          <textarea rows="11" value=${f.body} onInput=${set("body")}
-            placeholder="Write like a letter to the city…"></textarea>
-          <p class="tiny muted" style="margin:6px 0 0">Blank line = paragraph · <code>## Heading</code> · <code>**bold**</code> · <code>*italic*</code> · <code>${">"} quote</code> · bare URLs become links</p>
-        </div>`
-      : html`<div class="story-prose story-preview" dangerouslySetInnerHTML=${{ __html: storyHtml(f.body) || "<p><i>Nothing to preview yet…</i></p>" }}></div>`}
+    <div class="story-prose story-editarea" contenteditable="true" ref=${prose}
+      onPaste=${(e) => { e.preventDefault(); document.execCommand("insertText", false, e.clipboardData.getData("text/plain")); }}></div>
 
-    <div class="field"><label>Video (YouTube / Vimeo link — embedded in the app)</label>
-      <input value=${f.video_url} onInput=${set("video_url")} placeholder="https://youtube.com/watch?v=…" /></div>
-    <div class="field"><label>Photos <span class="muted">(first one is the cover)</span></label>
+    <div class="fieldrow" style="margin-top:14px">
+      <div class="field" style="margin:0"><label>Video (YouTube / Vimeo — embedded in the app)</label>
+        <input value=${videoUrl} onInput=${(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" /></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label>Photos <span class="muted">(first one is the cover)</span></label>
       ${images.length > 0 && html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         ${images.map((p, i) => html`<div style="position:relative" key=${p}>
           <img src=${mediaUrl(client, p)} alt="" style=${"width:86px;height:60px;object-fit:cover;border-radius:8px" + (i === 0 ? ";outline:2px solid var(--rose)" : "")} />
@@ -200,12 +241,12 @@ function StoryModal({ client, session, city, story, flash, onClose, onSaved }) {
       </div>`}
       <input type="file" accept="image/*" multiple onChange=${addImages} /></div>
 
-    <div class="actions" style="justify-content:space-between">
+    <div class="actions" style="justify-content:space-between;margin-top:14px">
       <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
       <div style="display:flex;gap:10px">
         <button type="button" class="btn ghost" disabled=${busy} onClick=${() => save(story ? null : false)}>${busy ? "…" : "Save draft"}</button>
         <button type="button" class="btn" disabled=${busy} onClick=${() => save(true)}>${busy ? "…" : "Publish"}</button>
       </div>
     </div>
-  </${Modal}>`;
+  </div>`;
 }

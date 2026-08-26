@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=18";
+import { html, Avatar, cityName } from "./ui.js?v=19";
 
 /* CRM — watch users move down the maturity funnel and run the drip engine.
    Funnel: stages derived live from real actions (crm_users RPC). Campaigns:

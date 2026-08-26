@@ -294,7 +294,18 @@ a { color: inherit; }
 .story-prose h3 { font: 600 18px/1.3 var(--display); margin: 18px 0 8px; }
 .story-prose blockquote { margin: 12px 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--rose); font-style: italic; color: var(--ink-2); }
 .story-prose a { color: var(--teal-ink); text-underline-offset: 2px; }
-.story-preview { border: 1.5px dashed var(--line); border-radius: var(--r-sm); padding: 14px 16px; margin-bottom: 12px; min-height: 120px; background: var(--paper); }
+/* inline editor — the writing surface IS the reading typography */
+.story-editor { padding: 18px 22px 20px; margin-bottom: 20px; outline: 2px solid var(--rose-soft); }
+.story-edit-title { width: 100%; border: 0; outline: none; background: none; padding: 2px 0 8px;
+  font: 600 26px/1.2 var(--display); letter-spacing: -.4px; color: var(--ink); }
+.story-edit-title::placeholder { color: var(--faint); }
+.story-toolbar { display: flex; gap: 4px; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  padding: 6px 0; margin-bottom: 12px; }
+.story-toolbar button { width: 32px; height: 28px; border: 0; background: none; border-radius: 7px;
+  font-size: 14px; color: var(--ink-2); display: grid; place-items: center; }
+.story-toolbar button:hover { background: var(--surface-2); color: var(--ink); }
+.story-editarea { min-height: 180px; outline: none; caret-color: var(--rose); }
+.story-editarea:empty::before { content: "Write like a letter to the city…"; color: var(--faint); font-style: italic; }
 .story-strip { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; }
 .story-strip img { height: 74px; border-radius: 8px; flex: none; }
 
