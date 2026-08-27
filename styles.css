@@ -306,6 +306,13 @@ a { color: inherit; }
 .story-toolbar button:hover { background: var(--surface-2); color: var(--ink); }
 .story-editarea { min-height: 180px; outline: none; caret-color: var(--rose); }
 .story-editarea:empty::before { content: "Write like a letter to the city…"; color: var(--faint); font-style: italic; }
+
+/* placed images — figure blocks inside the prose, draggable in the editor */
+.story-img { margin: 14px 0; }
+.story-img img { max-width: 100%; display: block; border-radius: 10px; }
+.story-editarea .story-img { cursor: grab; border-radius: 12px; padding: 2px; }
+.story-editarea .story-img:hover { outline: 2px dashed var(--rose); outline-offset: 2px; }
+.story-editarea .story-img:active { cursor: grabbing; }
 .story-strip { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; }
 .story-strip img { height: 74px; border-radius: 8px; flex: none; }
 

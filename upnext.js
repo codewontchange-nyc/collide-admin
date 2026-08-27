@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=19";
+import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=20";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;
@@ -15,6 +15,9 @@ const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, 
 export const storyHtml = (body) => esc(body || "").split(/\n{2,}/).map((b) => {
   b = b.trim();
   if (!b) return "";
+  // image block: ![](public-url) on its own line — placed by drag & drop
+  const im = b.match(/^!\[\]\((https?:\/\/[^\s)]+)\)$/);
+  if (im) return `<figure class="story-img" contenteditable="false" draggable="true"><img src="${im[1]}" loading="lazy" /></figure>`;
   const inline = (t) => t
     .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
     .replace(/\*([^*]+)\*/g, "<i>$1</i>")
@@ -41,7 +44,11 @@ export const domToStory = (root) => {
   const blocks = [];
   root.childNodes.forEach((n) => {
     if (n.nodeType === 3) { const t = n.textContent.trim(); if (t) blocks.push(t); return; }
-    const t = inlineText(n).replace(/ /g, " ").trim();
+    if (n.nodeType !== 1) return;
+    // a placed image (figure, or a bare img the browser dropped in)
+    const img = n.nodeName === "IMG" ? n : (n.nodeName === "FIGURE" ? n.querySelector("img") : null);
+    if (img) { const src = img.getAttribute("src"); if (src) blocks.push(`![](${src})`); return; }
+    const t = inlineText(n).replace(/\u00a0/g, " ").trim();
     if (!t) return;
     if (/^H[1-4]$/.test(n.nodeName)) blocks.push("## " + t);
     else if (n.nodeName === "BLOCKQUOTE") blocks.push("> " + t);
@@ -176,6 +183,51 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
   const cmd = (fn) => (e) => { e.preventDefault(); fn(); prose.current?.focus(); };
   const block = (tag) => document.execCommand("formatBlock", false, tag);
 
+  /* ---- drag & drop image placement ---- */
+  const dragSrc = useRef(null);   // figure being repositioned (null when dragging from the tray)
+  const mkFigure = (url) => {
+    const fig = document.createElement("figure");
+    fig.className = "story-img"; fig.contentEditable = "false"; fig.draggable = true;
+    const img = document.createElement("img"); img.src = url; img.loading = "lazy";
+    fig.appendChild(img);
+    return fig;
+  };
+  // dragging a figure that's already in the article = repositioning
+  const onDragStart = (e) => {
+    const fig = e.target.closest?.(".story-img");
+    if (!fig) return;
+    dragSrc.current = fig;
+    e.dataTransfer.setData("text/plain", "collide-img:" + fig.querySelector("img").src);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const onDrop = (e) => {
+    const t = e.dataTransfer.getData("text/plain");
+    if (!t.startsWith("collide-img:")) return;   // not ours — let the browser handle it
+    e.preventDefault();
+    const url = t.slice(12);
+    let range = null;
+    if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(e.clientX, e.clientY);
+    else if (document.caretPositionFromPoint) {
+      const p = document.caretPositionFromPoint(e.clientX, e.clientY);
+      if (p) { range = document.createRange(); range.setStart(p.offsetNode, p.offset); }
+    }
+    const fig = mkFigure(url);
+    if (range) {
+      // land between blocks, not inside one — hop up to the top-level block,
+      // then place above or below it depending on which half was hit
+      let node = range.startContainer;
+      while (node.parentNode && node.parentNode !== prose.current) node = node.parentNode;
+      if (node === prose.current || !node.parentNode) prose.current.appendChild(fig);
+      else {
+        const r = node.getBoundingClientRect?.();
+        const before = r && e.clientY < r.top + r.height / 2;
+        prose.current.insertBefore(fig, before ? node : node.nextSibling);
+      }
+    } else prose.current.appendChild(fig);
+    if (dragSrc.current && dragSrc.current !== fig) dragSrc.current.remove();
+    dragSrc.current = null;
+  };
+
   const addImages = async (e) => {
     const files = [...(e.target.files || [])];
     if (!files.length) return;
@@ -225,16 +277,19 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
       <span class="tiny" style="color:var(--faint);margin-left:auto">formatted exactly as readers see it</span>
     </div>
     <div class="story-prose story-editarea" contenteditable="true" ref=${prose}
+      onDragStart=${onDragStart} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}
       onPaste=${(e) => { e.preventDefault(); document.execCommand("insertText", false, e.clipboardData.getData("text/plain")); }}></div>
 
     <div class="fieldrow" style="margin-top:14px">
       <div class="field" style="margin:0"><label>Video (YouTube / Vimeo — embedded in the app)</label>
         <input value=${videoUrl} onInput=${(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" /></div>
     </div>
-    <div class="field" style="margin-top:12px"><label>Photos <span class="muted">(first one is the cover)</span></label>
+    <div class="field" style="margin-top:12px"><label>Photos <span class="muted">(first one is the cover — drag any into the story to place it)</span></label>
       ${images.length > 0 && html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         ${images.map((p, i) => html`<div style="position:relative" key=${p}>
-          <img src=${mediaUrl(client, p)} alt="" style=${"width:86px;height:60px;object-fit:cover;border-radius:8px" + (i === 0 ? ";outline:2px solid var(--rose)" : "")} />
+          <img src=${mediaUrl(client, p)} alt="" draggable=${true} title="Drag into the story to place it"
+            onDragStart=${(e) => { e.dataTransfer.setData("text/plain", "collide-img:" + mediaUrl(client, p)); e.dataTransfer.effectAllowed = "copy"; }}
+            style=${"width:86px;height:60px;object-fit:cover;border-radius:8px;cursor:grab" + (i === 0 ? ";outline:2px solid var(--rose)" : "")} />
           <button type="button" title="Remove photo" onClick=${() => setImages(images.filter((x) => x !== p))}
             style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#241d1a;color:#fff;font-size:11px;line-height:1;cursor:pointer">×</button>
         </div>`)}
