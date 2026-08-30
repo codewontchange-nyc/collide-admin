@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=24";
+import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=25";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;

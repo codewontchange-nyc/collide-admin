@@ -1,14 +1,14 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=24";
-import { Dashboard } from "./dashboard.js?v=24";
-import { SharedMap } from "./sharedmap.js?v=24";
-import { Overview } from "./overview.js?v=24";
-import { DataPage } from "./datatable.js?v=24";
-import { CRMPage } from "./crm.js?v=24";
-import { IssuesPage } from "./issues.js?v=24";
-import { UpNextPage } from "./upnext.js?v=24";
+import { html, Avatar, money } from "./ui.js?v=25";
+import { Dashboard } from "./dashboard.js?v=25";
+import { SharedMap } from "./sharedmap.js?v=25";
+import { Overview } from "./overview.js?v=25";
+import { DataPage } from "./datatable.js?v=25";
+import { CRMPage } from "./crm.js?v=25";
+import { IssuesPage } from "./issues.js?v=25";
+import { UpNextPage } from "./upnext.js?v=25";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -19,6 +19,43 @@ const client = (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY)
   ? createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY)
   : null;
 window.CA = { client };   // debug/test hook
+
+/* ---- console error telemetry ----
+   Report our own uncaught errors into the same client_errors table the app
+   feeds and the Issues page reads, tagged source:"console" so the two are
+   told apart. Only reports while signed in (RLS needs an authed session);
+   throttled + de-duped so one broken render can't flood the table. */
+const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]')?.src.match(/v=(\d+)/)?.[1] || "?");
+(() => {
+  if (!client) return;
+  const seen = new Map(); let sent = 0; const CAP = 20;
+  const report = async (message, stack, source) => {
+    try {
+      message = String(message || "").slice(0, 500);
+      if (!message || /ResizeObserver loop/.test(message)) return;   // benign browser noise
+      const key = source + "|" + message.slice(0, 120);
+      const now = Date.now();
+      if (seen.get(key) > now - 60000) return;   // same error, within a minute → skip
+      seen.set(key, now);
+      if (sent >= CAP) return;                    // hard cap per page load
+      sent++;
+      const { data } = await client.auth.getSession();
+      if (!data.session) return;                  // RLS: authenticated only
+      await client.from("client_errors").insert({
+        profile_id: data.session.user.id,
+        url: location.href.slice(0, 300),
+        message, stack: (stack || "").slice(0, 4000),
+        source, ua: navigator.userAgent, ver: CONSOLE_VER,
+      });
+    } catch { /* telemetry must never throw */ }
+  };
+  window.addEventListener("error", (e) => report(e.message, e.error?.stack, "console:window.onerror"));
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    report(r?.message || String(r), r?.stack, "console:unhandledrejection");
+  });
+  window.CA.report = report;   // manual hook for caught errors
+})();
 
 /* Three worlds: Overview (platform-level, every community), Dashboard (ONE
    community's slice — exactly what a facilitator gets when they log in,

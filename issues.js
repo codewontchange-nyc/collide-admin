@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=24";
+import { html, Avatar, cityName } from "./ui.js?v=25";
 
 /* Issues — the app's telemetry (client_errors) reported for humans:
    summary metrics, then errors grouped sentry-style by normalized message +
@@ -27,6 +27,7 @@ export function IssuesPage({ client, isOwner, flash }) {
   const [profiles, setProfiles] = useState(new Map());
   const [win, setWin] = useState("7d");
   const [q, setQ] = useState("");
+  const [surface, setSurface] = useState("all");   // all | app | console
   const [open, setOpen] = useState(null);   // group key
 
   const load = useCallback(async () => {
@@ -47,7 +48,11 @@ export function IssuesPage({ client, isOwner, flash }) {
 
   const groups = useMemo(() => {
     const map = new Map();
-    for (const r of rows || []) {
+    const src = rows || [];
+    const scoped = surface === "all" ? src
+      : surface === "console" ? src.filter((r) => (r.source || "").startsWith("console"))
+      : src.filter((r) => !(r.source || "").startsWith("console"));
+    for (const r of scoped) {
       const key = (r.source || "app") + "|" + normalize(r.message);
       let g = map.get(key);
       if (!g) { g = { key, message: normalize(r.message), sample: r.message, source: r.source || "app",
@@ -66,7 +71,7 @@ export function IssuesPage({ client, isOwner, flash }) {
       out = out.filter((g) => (g.sample || "").toLowerCase().includes(n) || g.source.toLowerCase().includes(n));
     }
     return out;
-  }, [rows, q]);
+  }, [rows, q, surface]);
 
   const day = new Date(Date.now() - 864e5).toISOString();
   const metrics = [
@@ -85,7 +90,7 @@ export function IssuesPage({ client, isOwner, flash }) {
 
   return html`<div class="page" style="max-width:1080px">
     <div class="pagehead">
-      <h2>Issues <span class="muted" style="font:400 13px var(--body)">app telemetry — every client error, grouped</span></h2>
+      <h2>Issues <span class="muted" style="font:400 13px var(--body)">telemetry from the app and this console, grouped</span></h2>
       <button class="btn small ghost" onClick=${load}>↻ refresh</button>
     </div>
 
@@ -93,6 +98,10 @@ export function IssuesPage({ client, isOwner, flash }) {
       ${metrics.map(([l, n]) => html`<div class="metric"><div class="n">${rows === null ? "…" : n}</div><div class="l">${l}</div></div>`)}
       <div style="flex:1"></div>
       <input class="dt-search" placeholder="Search errors…" value=${q} onInput=${(e) => setQ(e.target.value)} />
+      <div class="subnav" style="margin:0">
+        ${[["all", "all"], ["app", "📱 app"], ["console", "🖥 console"]].map(([k, l]) =>
+          html`<button class=${surface === k ? "on" : ""} onClick=${() => setSurface(k)}>${l}</button>`)}
+      </div>
       <div class="subnav" style="margin:0">
         ${WINDOWS.map(([k]) => html`<button class=${win === k ? "on" : ""} onClick=${() => setWin(k)}>${k}</button>`)}
       </div>
@@ -106,7 +115,7 @@ export function IssuesPage({ client, isOwner, flash }) {
           <div style="flex:1;min-width:0">
             <div class="iss-msg">${g.sample || g.message}</div>
             <div class="iss-meta">
-              <span class="pillstat">${g.source}</span>
+              <span class=${"pillstat" + (g.source.startsWith("console") ? " owner" : "")}>${g.source.startsWith("console") ? "🖥 " : "📱 "}${g.source}</span>
               ${g.users.size > 0 && html`<span>${g.users.size} user${g.users.size === 1 ? "" : "s"}</span>`}
               ${[...g.cities].map((c) => html`<span class="citychip" style="margin:0">${cityName(c)}</span>`)}
               ${[...g.vers].slice(0, 3).map((v) => html`<span class="pillstat">${v}</span>`)}
