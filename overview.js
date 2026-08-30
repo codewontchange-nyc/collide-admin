@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=20";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=21";
 
 /* Platform KPI strip — owner-only tiles above the community grid.
    Numbers come from the platform_kpis() RPC (server-side, auth-aware);
@@ -41,8 +41,8 @@ const DAY = 864e5;
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
 export function Overview({ client, communities, isOwner, flash, go, pickComm }) {
-  const [members, setMembers] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [members, setMembers] = useState(null);   // null = loading
+  const [events, setEvents] = useState(null);
   const [openInvites, setOpenInvites] = useState(0);
   const [kpis, setKpis] = useState(null);   // null until the RPC answers (owner only)
   const [errors24, setErrors24] = useState(0);
@@ -72,8 +72,9 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   const now = Date.now();
   const living = communities.filter((c) => !c.archived_at);
   const archived = communities.filter((c) => c.archived_at);
+  const loaded = members !== null;
   const stats = living.map((c) => {
-    const mine = members.filter((m) => m.community_id === c.id);
+    const mine = (members || []).filter((m) => m.community_id === c.id);
     const active = mine.filter((m) => m.status !== "pending");
     const pending = mine.length - active.length;
     const joinedIn = (from, to) => active.filter((m) => {
@@ -82,7 +83,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
     }).length;
     const thisWeek = joinedIn(7, 0);
     const prevWeek = joinedIn(14, 7);
-    const evs = events.filter((e) => e.community_id === c.id);
+    const evs = (events || []).filter((e) => e.community_id === c.id);
     return { c, count: active.length, pending, thisWeek, prevWeek, evs };
   });
 
@@ -99,9 +100,9 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   return html`<div>
     <div class="pagehead">
       <h2 style="margin:0;font:600 24px Fraunces,serif">All communities</h2>
-      <div class="muted tiny">${living.length} communities · ${totals.members} members
+      <div class="muted tiny">${living.length} communities · ${loaded ? totals.members : "…"} members
         ${totals.thisWeek > 0 && html` · <span style="color:var(--green);font-weight:600">+${totals.thisWeek} this week</span>`}
-        · ${totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
+        · ${events === null ? "…" : totals.events} upcoming events${totals.pending > 0 && html` · <span style="color:#6d682f;font-weight:600">${totals.pending} pending</span>`}</div>
     </div>
     ${kpis && html`<${KpiStrip} k=${kpis} />`}
     ${(totals.pending > 0 || (isOwner && openInvites > 0) || errors24 > 0) && html`<div class="attention">
@@ -129,7 +130,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
           </div>
           <div class="ovstats">
             <div class="ovstat" onClick=${() => open(c.id, "members")}>
-              <div class="n">${count}${thisWeek > 0 && html`<span class="rise">+${thisWeek}</span>`}</div>
+              <div class="n">${loaded ? count : "…"}${thisWeek > 0 && html`<span class="rise">+${thisWeek}</span>`}</div>
               <div class="l">members</div>
             </div>
             <div class="ovstat">
@@ -138,7 +139,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
               <div class="l">wk / wk <span class="muted">(${prevWeek}→${thisWeek})</span></div>
             </div>
             <div class="ovstat" onClick=${() => open(c.id, "events")}>
-              <div class="n">${evs.length}</div>
+              <div class="n">${events === null ? "…" : evs.length}</div>
               <div class="l">upcoming</div>
             </div>
             ${pending > 0 && html`<div class="ovstat" onClick=${() => open(c.id, "members")}>
@@ -152,7 +153,7 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
               <span class="t">${e.title}</span>
               ${(e.place || e.location) && html`<span class="p">📍 ${e.place || e.location}</span>`}
             </div>`)}
-            ${evs.length === 0 && html`<div class="ovev muted" onClick=${() => open(c.id, "events")}>No upcoming events — plan one →</div>`}
+            ${events !== null && evs.length === 0 && html`<div class="ovev muted" onClick=${() => open(c.id, "events")}>No upcoming events — plan one →</div>`}
             ${evs.length > 3 && html`<button class="linkbtn tiny" onClick=${() => open(c.id, "events")}>all ${evs.length} events →</button>`}
           </div>
         </div>`;

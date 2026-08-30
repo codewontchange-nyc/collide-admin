@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=20";
-import { EventsPage } from "./events.js?v=20";
-import { AnnouncementsPage } from "./announcements.js?v=20";
-import { MembersPage } from "./members.js?v=20";
-import { MoneyPage } from "./money.js?v=20";
-import { SettingsPage } from "./settings.js?v=20";
-import { PartnershipsPage } from "./partnerships.js?v=20";
+import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=21";
+import { EventsPage } from "./events.js?v=21";
+import { AnnouncementsPage } from "./announcements.js?v=21";
+import { MembersPage } from "./members.js?v=21";
+import { MoneyPage } from "./money.js?v=21";
+import { SettingsPage } from "./settings.js?v=21";
+import { PartnershipsPage } from "./partnerships.js?v=21";
 
 /* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
    on the left, and every facilitator section as a tab on the right — all of
@@ -69,10 +69,10 @@ export function Dashboard(props) {
 }
 
 function DashHome({ client, community, flash, go }) {
-  const [members, setMembers] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [pois, setPois] = useState([]);
-  const [ledger, setLedger] = useState([]);
+  const [members, setMembers] = useState(null);   // null = loading
+  const [events, setEvents] = useState(null);
+  const [pois, setPois] = useState(null);
+  const [ledger, setLedger] = useState(null);
   const [win, setWin] = useState("M");   // D / W / M for the Events & POI tile
 
   useEffect(() => {
@@ -95,7 +95,8 @@ function DashHome({ client, community, flash, go }) {
     return () => { live = false; };
   }, [community?.id]);
 
-  const active = members.filter((m) => m.status !== "pending");
+  const loading = members === null;
+  const active = (members || []).filter((m) => m.status !== "pending");
   const monthStart = useMemo(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); }, []);
   const joinedThisMonth = active.filter((m) => (m.joined_at || "") >= monthStart).length;
 
@@ -105,7 +106,7 @@ function DashHome({ client, community, flash, go }) {
     if (win === "W") { d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); }
     d.setDate(1); return d.toISOString().slice(0, 10);
   }, [win]);
-  const ledgerSum = ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
+  const ledgerSum = (ledger || []).filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
 
   return html`<div class="dashhome">
@@ -121,11 +122,11 @@ function DashHome({ client, community, flash, go }) {
       <div class="stats">
       <div class="stat">
         <div class="lab">Members</div>
-        <div class="num">${active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
+        <div class="num">${loading ? "…" : active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
       </div>
       <div class="stat">
         <div class="lab">Memberships <span class="muted">${money(community.membership_price_cents || 0)}</span></div>
-        <div class="num money">${money(membershipMo)}<span class="unit">mo</span></div>
+        <div class="num money">${loading ? "…" : money(membershipMo)}<span class="unit">mo</span></div>
       </div>
       <div class="stat">
         <div class="lab">Events ${"&"} POI
@@ -133,7 +134,7 @@ function DashHome({ client, community, flash, go }) {
             ${["D", "W", "M"].map((w) => html`<button class=${win === w ? "on" : ""} onClick=${() => setWin(w)}>${w}</button>`)}
           </span>
         </div>
-        <div class="num money">${money(ledgerSum)}</div>
+        <div class="num money">${loading ? "…" : money(ledgerSum)}</div>
       </div>
       </div>
     </div>
@@ -145,7 +146,7 @@ function DashHome({ client, community, flash, go }) {
           <button class="btn pill" onClick=${() => go("dashboard/events")}>create new</button>
         </div>
         <div class="evlist">
-          ${events.slice(0, 4).map((e) => html`<div class="evcard" onClick=${() => go("dashboard/events")} style="cursor:pointer">
+          ${(events || []).slice(0, 4).map((e) => html`<div class="evcard" onClick=${() => go("dashboard/events")} style="cursor:pointer">
             ${e.image_path
               ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />`
               : html`<div class="thumb">🗓️</div>`}
@@ -154,22 +155,22 @@ function DashHome({ client, community, flash, go }) {
               <div class="d">${niceDate(e.date || "")}${e.starts_at ? " · " + niceTime(e.starts_at) : ""}${e.location ? " · " + e.location : ""}</div>
             </div>
           </div>`)}
-          ${events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}
-          ${events.length > 4 && html`<button class="seeall" onClick=${() => go("dashboard/events")}>see all ${events.length}</button>`}
+          ${events !== null && events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}${events === null && html`<div class="empty" style="border:0">Loading…</div>`}
+          ${events !== null && events.length > 4 && html`<button class="seeall" onClick=${() => go("dashboard/events")}>see all ${events.length}</button>`}
         </div>
       </div>
       <div class="card">
         <div class="sec-head">
           <div class="sec-title">Points of interest</div>
-          <span class="muted tiny">${pois.length}</span>
+          <span class="muted tiny">${pois === null ? "…" : pois.length}</span>
         </div>
         <div class="poigrid">
-          ${pois.slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
+          ${(pois || []).slice(0, 9).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
             <div class="disc">${p.image_path ? html`<img src=${mediaUrl(client, p.image_path)} alt="" />` : "📍"}</div>
             <div class="n">${p.name}</div>
             ${p.category && html`<div class="c">${p.category}</div>`}
           </div>`)}
-          ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
+          ${pois !== null && pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
         </div>
       </div>
     </div>

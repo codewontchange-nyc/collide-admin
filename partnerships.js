@@ -1,12 +1,12 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, moneyExact, niceDate, mediaUrl } from "./ui.js?v=20";
+import { html, money, moneyExact, niceDate, mediaUrl } from "./ui.js?v=21";
 
 /* Partnerships, phase 1: the community's POI partners at a glance plus the
    partner income already logged in the ledger (kind = "poi"). Formal deals —
    contacts, terms, payouts — come later. */
 
 export function PartnershipsPage({ client, community, go }) {
-  const [pois, setPois] = useState([]);
+  const [pois, setPois] = useState(null);   // null = loading
   const [ledger, setLedger] = useState([]);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export function PartnershipsPage({ client, community, go }) {
     </div>
 
     <div class="stats" style="grid-template-columns:repeat(3,1fr);max-width:760px">
-      <div class="stat"><div class="lab">Partner spots</div><div class="num">${pois.length}</div></div>
+      <div class="stat"><div class="lab">Partner spots</div><div class="num">${pois === null ? "…" : pois.length}</div></div>
       <div class="stat"><div class="lab">Partner income this month</div><div class="num money">${money(monthSum)}</div></div>
       <div class="stat"><div class="lab">Partner income all-time</div><div class="num money">${money(total)}</div></div>
     </div>
@@ -42,12 +42,13 @@ export function PartnershipsPage({ client, community, go }) {
 
     <div class="section-label" style="margin-top:22px">Partner spots</div>
     <div class="poigrid" style="max-width:760px">
-      ${pois.map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
+      ${(pois || []).map((p) => html`<div class="poi" onClick=${() => go("map")} style="cursor:pointer">
         <div class="disc">${p.image_path ? html`<img src=${mediaUrl(client, p.image_path)} alt="" />` : "📍"}</div>
         <div class="n">${p.name}</div>
         ${p.category && html`<div class="c">${p.category}</div>`}
       </div>`)}
-      ${pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No partner spots yet — drop points of interest on the map ⚫</div>`}
+      ${pois === null && html`<div class="empty" style="grid-column:1/-1;border:0">Loading…</div>`}
+      ${pois !== null && pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No partner spots yet — drop points of interest on the map ⚫</div>`}
     </div>
 
     ${ledger.length > 0 && html`<div style="margin-top:26px">

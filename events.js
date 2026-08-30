@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=20";
+import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=21";
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
 export function EventsPage({ client, community, session, flash }) {
-  const [events, setEvents] = useState([]);
+  const [events, setEvents] = useState(null);   // null = loading
   const [showPast, setShowPast] = useState(false);
   const [editing, setEditing] = useState(null);    // null | {} (new) | event row
   const [roster, setRoster] = useState(null);      // event whose RSVPs are open
@@ -37,7 +37,7 @@ export function EventsPage({ client, community, session, flash }) {
       </div>
     </div>
     <div class="evlist">
-      ${events.map((e) => html`<div class="evcard">
+      ${(events || []).map((e) => html`<div class="evcard">
         ${e.image_path ? html`<img class="thumb" src=${mediaUrl(client, e.image_path)} alt="" />` : html`<div class="thumb">🗓️</div>`}
         <div style="flex:1">
           <div class="t">${e.title}${e.price_cents > 0 && html` <span class="pillstat">${moneyExact(e.price_cents)}</span>`}${e.category && html` <span class="pillstat">${e.category}</span>`}</div>
@@ -49,7 +49,8 @@ export function EventsPage({ client, community, session, flash }) {
           <button class="btn small danger" onClick=${() => remove(e)}>Delete</button>
         </div>
       </div>`)}
-      ${events.length === 0 && html`<div class="empty">${showPast ? "No past events." : "Nothing coming up — plan something 🎉"}</div>`}
+      ${events === null && html`<div class="empty" style="border:0">Loading…</div>`}
+      ${events !== null && events.length === 0 && html`<div class="empty">${showPast ? "No past events." : "Nothing coming up — plan something 🎉"}</div>`}
     </div>
     ${editing && html`<${EventModal} client=${client} community=${community} session=${session}
       event=${editing.id ? editing : null} flash=${flash}

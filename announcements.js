@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar } from "./ui.js?v=20";
+import { html, Avatar } from "./ui.js?v=21";
 
 /* The front page's loudest feature, manageable from the desk.
    Facilitators hold ONE live announcement (posting replaces it — the DB
@@ -21,7 +21,7 @@ const left = (iso) => {
    shows that community's announcements plus globals. Owners can still post
    a global from here. */
 export function AnnouncementsPage({ client, communities, community, isOwner, session, flash }) {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(null);   // null = loading
   const [body, setBody] = useState("");
   const [scope, setScope] = useState(community?.id || (isOwner ? "global" : (communities[0]?.id || "")));
   const [busy, setBusy] = useState(false);
@@ -38,7 +38,7 @@ export function AnnouncementsPage({ client, communities, community, isOwner, ses
   useEffect(() => { load(); }, [load]);
 
   const cname = (id) => communities.find((c) => c.id === id)?.name || "…";
-  const mineLive = rows.some((a) => a.author_id === session.user.id);
+  const mineLive = (rows || []).some((a) => a.author_id === session.user.id);
 
   const post = async () => {
     if (!body.trim()) return;
@@ -81,7 +81,7 @@ export function AnnouncementsPage({ client, communities, community, isOwner, ses
       </div>
     </div>
     <div class="evlist">
-      ${rows.map((a) => html`<div class="evcard">
+      ${(rows || []).map((a) => html`<div class="evcard">
         <${Avatar} profile=${a.author} />
         <div style="flex:1">
           <div class="d">${a.author?.display_name || "?"} · ${ago(a.created_at)} ·
@@ -93,7 +93,8 @@ export function AnnouncementsPage({ client, communities, community, isOwner, ses
           <button class="btn small danger" onClick=${() => remove(a)}>Take down</button>
         </div>
       </div>`)}
-      ${rows.length === 0 && html`<div class="empty">Nothing live — the front page is quiet.</div>`}
+      ${rows === null && html`<div class="empty" style="border:0">Loading…</div>`}
+      ${rows !== null && rows.length === 0 && html`<div class="empty">Nothing live — the front page is quiet.</div>`}
     </div>
   </div>`;
 }

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate } from "./ui.js?v=20";
-import { sendInvite } from "./datatable.js?v=20";
+import { html, Avatar, Modal, niceDate } from "./ui.js?v=21";
+import { sendInvite } from "./datatable.js?v=21";
 
 const APP_URL = "https://codewontchange-nyc.github.io/Collide";
 
 export function MembersPage({ client, community, isOwner, flash }) {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(null);   // null = loading
   const [staff, setStaff] = useState([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [staffOpen, setStaffOpen] = useState(false);
@@ -38,7 +38,7 @@ export function MembersPage({ client, community, isOwner, flash }) {
 
   return html`<div class="page">
     <div class="pagehead">
-      <h2 style="margin:0">Members <span class="muted" style="font:400 15px Inter">${rows.length}</span></h2>
+      <h2 style="margin:0">Members <span class="muted" style="font:400 15px Inter">${rows === null ? "…" : rows.length}</span></h2>
       <div style="display:flex;gap:10px">
         ${isOwner && html`<button class="btn ghost" onClick=${() => setStaffOpen(true)}>Facilitators</button>`}
         <button class="btn" onClick=${() => setInviteOpen(true)}>Invite</button>
@@ -47,7 +47,7 @@ export function MembersPage({ client, community, isOwner, flash }) {
     <table class="table">
       <thead><tr><th></th><th>Member</th><th>Joined</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${rows.map((r) => html`<tr>
+        ${(rows || []).map((r) => html`<tr>
           <td style="width:40px"><${Avatar} profile=${r.profile} /></td>
           <td><b>${r.profile?.display_name || "—"}</b></td>
           <td class="muted">${r.joined_at ? niceDate(r.joined_at.slice(0, 10)) : "—"}</td>
@@ -59,7 +59,8 @@ export function MembersPage({ client, community, isOwner, flash }) {
         </tr>`)}
       </tbody>
     </table>
-    ${rows.length === 0 && html`<div class="empty" style="margin-top:12px">No members yet — share the invite link 💌</div>`}
+    ${rows === null && html`<div class="empty" style="border:0;margin-top:12px">Loading…</div>`}
+    ${rows !== null && rows.length === 0 && html`<div class="empty" style="margin-top:12px">No members yet — share the invite link 💌</div>`}
 
     ${inviteOpen && html`<${InviteModal} client=${client} community=${community} flash=${flash}
       onClose=${() => setInviteOpen(false)} onSaved=${() => { setInviteOpen(false); load(); }} />`}
@@ -138,7 +139,7 @@ function StaffModal({ client, community, staff, flash, onClose }) {
       <button class="btn" disabled=${busy}>${busy ? "Sending…" : "Invite"}</button>
     </form>
     <table class="table"><tbody>
-      ${rows.map((r) => html`<tr>
+      ${(rows || []).map((r) => html`<tr>
         <td>${r.email}</td>
         <td><span class=${"pillstat " + r.role}>${r.role}${r.community_id === null ? " · all communities" : ""}</span></td>
         <td class="rowactions">${r.role !== "owner" && html`<button class="btn small danger" onClick=${() => drop(r)}>Remove</button>`}</td>
