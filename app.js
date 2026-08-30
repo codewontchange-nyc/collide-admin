@@ -1,14 +1,14 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=22";
-import { Dashboard } from "./dashboard.js?v=22";
-import { SharedMap } from "./sharedmap.js?v=22";
-import { Overview } from "./overview.js?v=22";
-import { DataPage } from "./datatable.js?v=22";
-import { CRMPage } from "./crm.js?v=22";
-import { IssuesPage } from "./issues.js?v=22";
-import { UpNextPage } from "./upnext.js?v=22";
+import { html, Avatar, money } from "./ui.js?v=23";
+import { Dashboard } from "./dashboard.js?v=23";
+import { SharedMap } from "./sharedmap.js?v=23";
+import { Overview } from "./overview.js?v=23";
+import { DataPage } from "./datatable.js?v=23";
+import { CRMPage } from "./crm.js?v=23";
+import { IssuesPage } from "./issues.js?v=23";
+import { UpNextPage } from "./upnext.js?v=23";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -172,10 +172,10 @@ function App() {
         : (comms || []).filter((c) => mine.some((s) => s.community_id === null || s.community_id === c.id));
       setCommunities(scoped);
       const saved = localStorage.getItem("ca.comm");
-      const living = (comms || []).filter((c) => !c.archived_at);
-      if (saved && (comms || []).some((c) => c.id === saved)) setCommId(saved);
+      const living = scoped.filter((c) => !c.archived_at);
+      if (saved && scoped.some((c) => c.id === saved)) setCommId(saved);
       else if (living.length) setCommId(living[0].id);
-      else if (comms && comms.length) setCommId(comms[0].id);
+      else if (scoped.length) setCommId(scoped[0].id);
       const { data: prof } = await client.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       if (live) setProfile(prof || null);
     })();
