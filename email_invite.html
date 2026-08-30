@@ -13,7 +13,7 @@
 <div style="font-family:Georgia,'Times New Roman',serif;font-size:23px;font-weight:bold;color:#241d1a;padding-bottom:10px;">Come run the show.</div>
 <div style="font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.55;color:#5c534d;padding-bottom:22px;">You&rsquo;ve been invited to facilitate {{ if .Data.community_name }}<b style="color:#241d1a;">{{ .Data.community_name }}</b>{{ else }}Collide{{ end }} &mdash; post events, welcome members, and run announcements from the Collide console. Your key is below.</div>
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr><td align="center">
-<a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#241d1a;color:#fbf6f0;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 36px;border-radius:999px;">Open the console &#8594;</a>
+<a href="https://codewontchange-nyc.github.io/collide-admin/#th={{ .TokenHash }}&tt=invite" style="display:inline-block;background:#241d1a;color:#fbf6f0;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 36px;border-radius:999px;">Open the console &#8594;</a>
 </td></tr></table>
 {{ else }}
 <div style="font-family:Georgia,'Times New Roman',serif;font-size:23px;font-weight:bold;color:#241d1a;padding-bottom:10px;">Consider this your ticket.</div>
@@ -22,7 +22,7 @@
 <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#241d1a;color:#fbf6f0;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 36px;border-radius:999px;">Accept the invite &#8594;</a>
 </td></tr></table>
 {{ end }}
-<div style="font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#8a7e75;padding-top:20px;line-height:1.5;text-align:center;">This link is just for you, and it expires shortly.<br/>Button not working? Paste this into your browser:<br/><span style="word-break:break-all;color:#5c534d;">{{ .ConfirmationURL }}</span></div>
+<div style="font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#8a7e75;padding-top:20px;line-height:1.5;text-align:center;">This link is just for you, and it expires shortly.<br/>Button not working? Paste this into your browser:<br/><span style="word-break:break-all;color:#5c534d;">{{ if eq .Data.invite_kind "facilitator" }}https://codewontchange-nyc.github.io/collide-admin/#th={{ .TokenHash }}&tt=invite{{ else }}{{ .ConfirmationURL }}{{ end }}</span></div>
 </td></tr>
 <tr><td align="center" style="padding:18px 10px;">
 <div style="border-top:1px solid #d8cfc4;padding-top:14px;font-family:Georgia,'Times New Roman',serif;font-size:11.5px;color:#8a7e75;line-height:1.6;">

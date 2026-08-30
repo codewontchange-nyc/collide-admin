@@ -1,14 +1,14 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=21";
-import { Dashboard } from "./dashboard.js?v=21";
-import { SharedMap } from "./sharedmap.js?v=21";
-import { Overview } from "./overview.js?v=21";
-import { DataPage } from "./datatable.js?v=21";
-import { CRMPage } from "./crm.js?v=21";
-import { IssuesPage } from "./issues.js?v=21";
-import { UpNextPage } from "./upnext.js?v=21";
+import { html, Avatar, money } from "./ui.js?v=22";
+import { Dashboard } from "./dashboard.js?v=22";
+import { SharedMap } from "./sharedmap.js?v=22";
+import { Overview } from "./overview.js?v=22";
+import { DataPage } from "./datatable.js?v=22";
+import { CRMPage } from "./crm.js?v=22";
+import { IssuesPage } from "./issues.js?v=22";
+import { UpNextPage } from "./upnext.js?v=22";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -132,6 +132,14 @@ function App() {
   /* ---- auth ---- */
   useEffect(() => {
     if (!client) return;
+    // facilitator emails link here with a token hash — verify it right in the
+    // console (redirect-based links get rewritten to the app's site URL)
+    const th = location.hash.match(/th=([^&]+)(?:&tt=([a-z_]+))?/);
+    if (th) {
+      history.replaceState(null, "", location.pathname);
+      client.auth.verifyOtp({ token_hash: th[1], type: th[2] || "magiclink" })
+        .then(({ error }) => { if (error) setAuthErr("That sign-in link expired — request a fresh one below. (" + error.message + ")"); });
+    }
     client.auth.getSession().then(({ data }) => setSession(data.session || null));
     const { data: sub } = client.auth.onAuthStateChange((_e, s) => setSession(s || null));
     return () => sub?.subscription?.unsubscribe();
@@ -158,7 +166,11 @@ function App() {
       // RLS scopes this: owners see every community, facilitators just theirs
       const { data: comms } = await client.from("communities").select("*").order("created_at");
       if (!live) return;
-      setCommunities(comms || []);
+      // owners see every community; facilitators only the ones on their staff rows
+      const owner = mine.some((s) => s.role === "owner");
+      const scoped = owner ? (comms || [])
+        : (comms || []).filter((c) => mine.some((s) => s.community_id === null || s.community_id === c.id));
+      setCommunities(scoped);
       const saved = localStorage.getItem("ca.comm");
       const living = (comms || []).filter((c) => !c.archived_at);
       if (saved && (comms || []).some((c) => c.id === saved)) setCommId(saved);
