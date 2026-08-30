@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=25";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=26";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -8,7 +8,7 @@ import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName }
    dates, money, and select-pickers for community, author and member
    (RLS is the real permission gate; this page is only offered to owners). */
 
-const TABS = [["communities", "Communities"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"]];
+const TABS = [["communities", "Communities"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"], ["bans", "Bans"]];
 
 const short = (iso) => {
   if (!iso) return "—";
@@ -191,6 +191,14 @@ const SCHEMAS = {
         cell: (r) => html`<span class=${"pillstat " + r.status}>${r.status}</span>` },
       { key: "joined_at", label: "Joined", type: "dt", edit: true },
     ],
+    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
+      const who = r.profile?.display_name || "this user";
+      const reason = prompt(`Ban ${who} from ALL of Collide?\n\nThey are signed out, can't sign back in, lose every membership, and can't be re-invited. Type a reason to confirm:`);
+      if (reason === null || !reason.trim()) return;
+      const res = await sendModerate(api.client, { action: "ban", profile_id: r.profile_id, reason: reason.trim() });
+      api.flash(res.error || `Banned ${who} 🔨`);
+      if (!res.error) api.reload();
+    }}>Ban</button>`,
   },
   invites: {
     table: "invites",
@@ -231,6 +239,30 @@ const SCHEMAS = {
       if (!res.error) api.reload();
     }}>Resend</button>`,
   },
+  bans: {
+    table: "bans",
+    newLabel: "+ Ban by email",
+    modalCreate: true,
+    load: (client) => client.from("bans").select("*").order("created_at", { ascending: false }).limit(500),
+    match: (q, r) => q.eq("id", r.id),
+    noDelete: true,   // lifting a ban goes through the moderate function, not row delete
+    metrics: (rows) => [
+      ["banned", rows.length],
+      ["this month", rows.filter((r) => r.created_at > new Date(Date.now() - 30 * 864e5).toISOString()).length],
+    ],
+    cols: [
+      { key: "email", label: "Banned", wide: true },
+      { key: "reason", label: "Reason", get: (r) => r.reason || "—" },
+      { key: "banned_by", label: "By" },
+      { key: "created_at", label: "When", type: "dt" },
+    ],
+    rowAction: (r, api) => html`<button class="btn small ghost" onClick=${async () => {
+      if (!confirm(`Lift the ban on ${r.email}? They can sign in and be invited again (memberships are not restored).`)) return;
+      const res = await sendModerate(api.client, { action: "unban", email: r.email });
+      api.flash(res.error || `Unbanned ${r.email} ✓`);
+      if (!res.error) api.reload();
+    }}>Unban</button>`,
+  },
 };
 
 function EditCell({ row, col, ctx, onSave }) {
@@ -265,6 +297,17 @@ function EditCell({ row, col, ctx, onSave }) {
     ref=${(el) => el && setTimeout(() => { el.focus(); if (el.select) el.select(); }, 0)} />`;
 }
 
+/* owner-only moderation via the moderate edge function */
+export async function sendModerate(client, body) {
+  const { data, error } = await client.functions.invoke("moderate", { body });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).error || msg; } catch { /* keep generic */ }
+    return { error: msg };
+  }
+  return data || { ok: true };
+}
+
 /* invoke the invite edge function (service-role emails + membership) and
    surface its real error message instead of the generic FunctionsHttpError */
 export async function sendInvite(client, body) {
@@ -275,6 +318,35 @@ export async function sendInvite(client, body) {
     return { error: msg };
   }
   return data || { ok: true };
+}
+
+/* ban an address that isn't sitting in a members row */
+function BanModal({ client, flash, onClose, onSaved }) {
+  const [f, setF] = useState({ email: "", reason: "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const res = await sendModerate(client, { action: "ban", email: f.email.trim(), reason: f.reason.trim() || null });
+    setBusy(false);
+    if (res.error) { flash(res.error); return; }
+    flash(`Banned ${f.email.trim()} 🔨`);
+    onSaved();
+  };
+  return html`<${Modal} title="Ban a user" onClose=${onClose}>
+    <form onSubmit=${save}>
+      <div class="field"><label>Email</label>
+        <input type="email" required placeholder="them@email.com" value=${f.email} onInput=${set("email")} /></div>
+      <div class="field"><label>Reason</label>
+        <input value=${f.reason} onInput=${set("reason")} placeholder="Why — kept for the record" /></div>
+      <p class="tiny muted">They're signed out everywhere, can't sign back in, lose all memberships, and can't be re-invited until unbanned.</p>
+      <div class="actions">
+        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
+        <button class="btn danger" disabled=${busy}>${busy ? "Banning…" : "Ban user"}</button>
+      </div>
+    </form>
+  </${Modal}>`;
 }
 
 /* new community from the god view — same seeding as Settings: the creator
@@ -498,7 +570,7 @@ export function DataPage({ client, communities, session, flash, sub }) {
             </td>`)}
             <td><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end;padding-right:4px">
               ${S.rowAction && S.rowAction(r, { client, flash, reload: load })}
-              <button class="dt-del" title="Delete" onClick=${() => del(r)}>✕</button>
+              ${!S.noDelete && html`<button class="dt-del" title="Delete" onClick=${() => del(r)}>✕</button>`}
             </div></td>
           </tr>`)}
         </tbody>
@@ -510,6 +582,9 @@ export function DataPage({ client, communities, session, flash, sub }) {
 
     ${adding && (tab === "communities"
       ? html`<${AddCommunityModal} client=${client} ctx=${ctx} flash=${flash} onClose=${() => setAdding(false)} />`
+      : tab === "bans"
+      ? html`<${BanModal} client=${client} flash=${flash}
+          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`
       : html`<${AddMemberModal} client=${client} ctx=${ctx} flash=${flash}
           onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`)}
   </div>`;

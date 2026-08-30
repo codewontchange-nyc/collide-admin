@@ -1,14 +1,14 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=25";
-import { Dashboard } from "./dashboard.js?v=25";
-import { SharedMap } from "./sharedmap.js?v=25";
-import { Overview } from "./overview.js?v=25";
-import { DataPage } from "./datatable.js?v=25";
-import { CRMPage } from "./crm.js?v=25";
-import { IssuesPage } from "./issues.js?v=25";
-import { UpNextPage } from "./upnext.js?v=25";
+import { html, Avatar, money } from "./ui.js?v=26";
+import { Dashboard } from "./dashboard.js?v=26";
+import { SharedMap } from "./sharedmap.js?v=26";
+import { Overview } from "./overview.js?v=26";
+import { DataPage } from "./datatable.js?v=26";
+import { CRMPage } from "./crm.js?v=26";
+import { IssuesPage } from "./issues.js?v=26";
+import { UpNextPage } from "./upnext.js?v=26";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -64,7 +64,7 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
 const PAGES = ["overview", "dashboard", "map", "upnext", "data", "crm", "issues"];
 const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", issues: "Issues", upnext: "Up Next" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
-const DATA_SUBS = ["communities", "announcements", "events", "members", "invites"];
+const DATA_SUBS = ["communities", "announcements", "events", "members", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
 
 const routeNow = () => {

@@ -54,6 +54,10 @@ Deno.serve(async (req) => {
         return json({ error: "You can only invite members to your own communities" }, 403);
     }
 
+    // banned addresses can't be re-invited
+    const { data: ban } = await admin.from("bans").select("id").eq("email", em).maybeSingle();
+    if (ban) return json({ error: "That address is banned from Collide" }, 403);
+
     let communityName: string | null = null;
     if (community_id) {
       const { data: c } = await admin.from("communities").select("name").eq("id", community_id).maybeSingle();
