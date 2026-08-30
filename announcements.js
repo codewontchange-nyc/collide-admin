@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar } from "./ui.js?v=23";
+import { html, Avatar } from "./ui.js?v=24";
 
 /* The front page's loudest feature, manageable from the desk.
    Facilitators hold ONE live announcement (posting replaces it — the DB
@@ -44,9 +44,11 @@ export function AnnouncementsPage({ client, communities, community, isOwner, ses
     if (!body.trim()) return;
     setBusy(true);
     try {
+      const target = communities.find((c) => c.id === scope);
       const { error } = await client.from("announcements").insert({
         body: body.trim(),
         community_id: scope === "global" ? null : scope,
+        city: target?.city || "nyc",   // members only see their city's posts
         expires_at: new Date(Date.now() + 48 * 36e5).toISOString(),
       });
       if (error) throw error;

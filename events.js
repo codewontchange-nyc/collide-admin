@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=23";
+import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=24";
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
@@ -106,6 +106,7 @@ function EventModal({ client, community, session, event, flash, onClose, onSaved
         at_time: f.starts_at ? niceTime(f.starts_at) : null,
         when_bucket: f.date ? whenBucket(f.date) : null,
         visibility: "public",
+        city: community.city || "nyc",
         expires_at: f.date ? new Date(new Date(f.date + "T23:59:00").getTime() + 864e5).toISOString() : null,
       };
       const q = event

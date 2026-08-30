@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=23";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=24";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -106,6 +106,8 @@ const SCHEMAS = {
       community_id: null,
       expires_at: new Date(Date.now() + 48 * 36e5).toISOString(),
     }),
+    derive: (key, val, ctx) => (key === "community_id" && val
+      ? { city: ctx.communities.find((c) => c.id === val)?.city || "nyc" } : {}),
     metrics: (rows) => [
       ["total", rows.length],
       ["live", rows.filter((r) => !expired(r.expires_at)).length],
@@ -130,12 +132,16 @@ const SCHEMAS = {
     create: (client, ctx) => client.from("activities").insert({
       title: "New event ✏️ (click to edit)",
       community_id: ctx.communities[0]?.id ?? null,
+      city: ctx.communities[0]?.city || "nyc",
       host_id: ctx.session.user.id,
       date: todayStr(), category: "other", visibility: "public",
       when_bucket: "today", expires_at: dateExpiry(todayStr()),
     }),
     // keep the app-native mirror fields in sync when the admin edits inline
-    derive: (key, val) => {
+    derive: (key, val, ctx) => {
+      if (key === "community_id") return val
+        ? { city: ctx.communities.find((c) => c.id === val)?.city || "nyc" }
+        : {};
       if (key === "date") return val
         ? { when_bucket: whenBucket(val), expires_at: dateExpiry(val) }
         : { when_bucket: null };
@@ -406,7 +412,7 @@ export function DataPage({ client, communities, session, flash, sub }) {
   useEffect(() => { setRows(null); setSort({ key: null, dir: 1 }); setQ(""); load(); }, [load]);
 
   const save = async (row, key, val) => {
-    const patch = { [key]: val, ...(S.derive ? S.derive(key, val) : {}) };
+    const patch = { [key]: val, ...(S.derive ? S.derive(key, val, ctx) : {}) };
     const { error } = await S.match(client.from(S.table).update(patch), row);
     if (error) { flash(error.message); return; }
     const col = S.cols.find((c) => c.key === key);
