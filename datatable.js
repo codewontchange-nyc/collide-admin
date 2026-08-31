@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=31";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=32";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -8,7 +8,7 @@ import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName }
    dates, money, and select-pickers for community, author and member
    (RLS is the real permission gate; this page is only offered to owners). */
 
-const TABS = [["communities", "Communities"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Members"], ["invites", "Invites"], ["bans", "Bans"]];
+const TABS = [["communities", "Communities"], ["people", "People"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Memberships"], ["invites", "Invites"], ["bans", "Bans"]];
 
 const short = (iso) => {
   if (!iso) return "—";
@@ -167,6 +167,48 @@ const SCHEMAS = {
       { key: "capacity", label: "Cap", type: "text", edit: true },
     ],
   },
+  people: {
+    // ONE row per user — memberships are a different tab. This is where
+    // "how many people do we actually have" gets answered without double
+    // counting anyone who's in several communities.
+    table: "profiles",
+    newLabel: null,   // people arrive via invites, not row creation
+    load: (client) => client.from("profiles")
+      .select("*, memberships:community_members(community_id,status)")
+      .order("created_at", { ascending: false }).limit(2000),
+    match: (q, r) => q.eq("id", r.id),
+    metrics: (rows) => [
+      ["people", rows.length],
+      ["in a community", rows.filter((r) => (r.memberships || []).some((m) => m.status === "member")).length],
+      ["multi-community", rows.filter((r) => (r.memberships || []).filter((m) => m.status === "member").length > 1).length],
+      ["unattached", rows.filter((r) => !(r.memberships || []).length).length],
+    ],
+    cols: [
+      { key: "display_name", label: "Person", type: "text", edit: true, wide: true,
+        cell: (r) => html`<span style="display:inline-flex;align-items:center;gap:8px"><${Avatar} profile=${r} size="sm" /> <b>${r.display_name || "—"}</b></span> ` },
+      { key: "memberships", label: "Communities",
+        get: (r) => (r.memberships || []).filter((m) => m.status === "member").length,
+        cell: (r, ctx) => (r.memberships || []).length
+          ? html`<span style="display:inline-flex;gap:4px;flex-wrap:wrap">
+              ${(r.memberships || []).map((m) => html`<span class=${"pillstat " + m.status} title=${m.status}>${commName(ctx, m.community_id, "?")}</span>`)}
+            </span>`
+          : html`<span class="muted">—</span>` },
+      { key: "home_city", label: "Home city", type: "select", edit: true,
+        options: () => CITIES.map(([v, l]) => ({ v, l })), get: (r) => (r.home_city ? cityName(r.home_city) : "—") },
+      { key: "phone", label: "Phone", type: "text", edit: true },
+      { key: "connect_code", label: "Connect code" },
+      { key: "created_at", label: "Joined Collide", type: "dt" },
+    ],
+    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
+      const who = r.display_name || "this user";
+      const reason = prompt(`Ban ${who} from ALL of Collide?\n\nThey are signed out, can't sign back in, lose every membership, and can't be re-invited. Type a reason to confirm:`);
+      if (reason === null || !reason.trim()) return;
+      const res = await sendModerate(api.client, { action: "ban", profile_id: r.id, reason: reason.trim() });
+      api.flash(res.error || `Banned ${who} 🔨`);
+      if (!res.error) api.reload();
+    }}>Ban</button>`,
+    noDelete: true,   // removing an account goes through ban/remove, not row delete
+  },
   members: {
     table: "community_members",
     newLabel: "+ Add member",
@@ -176,8 +218,8 @@ const SCHEMAS = {
       .order("joined_at", { ascending: false }).limit(2000),
     match: (q, r) => q.eq("community_id", r.community_id).eq("profile_id", r.profile_id),
     metrics: (rows) => [
-      ["total", rows.length],
-      ["active", rows.filter((r) => r.status === "member").length],
+      ["people", new Set(rows.map((r) => r.profile_id)).size],   // unique — one person can hold several memberships
+      ["memberships", rows.length],
       ["pending", rows.filter((r) => r.status === "pending").length],
       ["communities", new Set(rows.map((r) => r.community_id)).size],
     ],
@@ -512,7 +554,10 @@ export function DataPage({ client, communities, session, flash, sub }) {
   const filtered = useMemo(() => {
     let out = rows || [];
     const commKey = tab === "communities" ? "id" : "community_id";
-    if (comm === "global") out = out.filter((r) => !r[commKey]);
+    if (tab === "people") {
+      if (comm === "global") out = out.filter((r) => !(r.memberships || []).length);
+      else if (comm) out = out.filter((r) => (r.memberships || []).some((m) => m.community_id === comm));
+    } else if (comm === "global") out = out.filter((r) => !r[commKey]);
     else if (comm) out = out.filter((r) => r[commKey] === comm);
     if (q.trim()) {
       const n = q.trim().toLowerCase();

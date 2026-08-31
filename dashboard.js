@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=31";
-import { EventsPage } from "./events.js?v=31";
-import { AnnouncementsPage } from "./announcements.js?v=31";
-import { MembersPage } from "./members.js?v=31";
-import { MoneyPage } from "./money.js?v=31";
-import { SettingsPage } from "./settings.js?v=31";
-import { PartnershipsPage } from "./partnerships.js?v=31";
+import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=32";
+import { EventsPage } from "./events.js?v=32";
+import { AnnouncementsPage } from "./announcements.js?v=32";
+import { MembersPage } from "./members.js?v=32";
+import { MoneyPage } from "./money.js?v=32";
+import { SettingsPage } from "./settings.js?v=32";
+import { PartnershipsPage } from "./partnerships.js?v=32";
 
 /* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
    on the left, and every facilitator section as a tab on the right — all of
