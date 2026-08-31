@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=32";
-import { EMOJI } from "./emoji-data.js?v=32";
+import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=33";
+import { MapInk, InkOverlay } from "./drawtools.js?v=33";
+import { EMOJI } from "./emoji-data.js?v=33";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -110,19 +111,23 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   const [comms, setComms] = useState([]);
   const [pois, setPois] = useState([]);
   const [editing, setEditing] = useState(null);   // {x,y,_new} | map_event row | {_kind:'poi', ...poi row}
+  const [inkMode, setInkMode] = useState(false);
+  const [ink, setInk] = useState([]);             // saved map_drawings elements for this city
   const wrap = useRef(null);
   const drag = useRef(null);
 
   const pickCity = (c) => { localStorage.setItem("ca.mapcity", c); setCfg(undefined); setCity(c); };
 
   const load = useCallback(async () => {
-    const [c, e, k, p] = await Promise.all([
+    const [c, e, k, p, d] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
       client.from("map_events").select("*").eq("city", city).order("created_at"),
       client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
       client.from("pois").select("*").eq("city", city),
+      client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
     ]);
     setCfg(c.data || null);
+    setInk(d.data?.elements || []);
     setEvents((e.data || []).filter(alive));
     setComms((k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at));
     setPois((p.data || []).filter((r) => r.x != null && r.y != null));
@@ -146,6 +151,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   };
 
   const onMapClick = (ev) => {
+    if (inkMode) return;   // drawing layer owns the pointer
     if (readonly || drag.current?.moved) { drag.current = null; return; }
     if (ev.target.closest(".map-pin") || ev.target.closest(".map-poi")) return;
     setEditing({ ...frac(ev), _new: true });
@@ -225,7 +231,10 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   return html`<div>
     ${!compact && html`<div class="pagehead">
       <h2 style="margin:0">Map <span class="muted" style="font:400 13px Inter">the same map members see — edits are live in the app</span></h2>
-      ${!readonly && html`<label class="btn ghost" style="cursor:pointer">${cfg ? "Replace" : "Upload"} ${cityName(city)} artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>`}
+      ${!readonly && html`<div style="display:flex;gap:8px">
+        <button class=${"btn" + (inkMode ? "" : " ghost")} onClick=${() => setInkMode(!inkMode)}>✏️ ${inkMode ? "Drawing…" : "Draw"}</button>
+        <label class="btn ghost" style="cursor:pointer">${cfg ? "Replace" : "Upload"} ${cityName(city)} artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>
+      </div>`}
     </div>`}
     ${!compact && html`<div class="subnav" style="margin-bottom:12px">
       ${CITIES.map(([k, label]) => html`<button class=${city === k ? "on" : ""} onClick=${() => pickCity(k)}>${label}</button>`)}
@@ -248,6 +257,9 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
             <span class="pe">${e.venue ? VENUE_EMOJI[e.venue] : (e.emoji || "🎉")}</span>
             ${e.title && html`<span class="pl">${e.title}</span>`}
           </button>`)}
+          ${!inkMode && html`<${InkOverlay} elements=${ink} />`}
+          ${inkMode && html`<${MapInk} key=${city} client=${client} city=${city} flash=${flash} saved=${ink}
+            onExit=${() => setInkMode(false)} onSaved=${(els) => setInk(els)} />`}
         </div>`}
     ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it · click a pin or dot to edit. POI dots are the small black circles.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}

@@ -434,3 +434,22 @@ a { color: inherit; }
 .mod-text { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
 .mod-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .pillstat.danger { background: #fdeae6; color: var(--danger); }
+
+/* ---- Map ink (drawing tools) ---- */
+.ink-layer { position: absolute; inset: 0; z-index: 30; touch-action: none; }
+.ink-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 40;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; max-width: calc(100% - 24px);
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 6px 12px; box-shadow: 0 6px 20px rgba(36,29,26,.16); }
+.ink-tool { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid transparent;
+  background: transparent; font-size: 15px; cursor: pointer; line-height: 1; padding: 0; }
+.ink-tool:hover { background: var(--wash, #f4ede4); }
+.ink-tool.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.ink-tool:disabled { opacity: .3; cursor: default; }
+.ink-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+.ink-swatch.on { border-color: var(--ink); transform: scale(1.18); }
+.ink-custom { width: 24px; height: 24px; border: none; background: none; padding: 0; cursor: pointer; }
+.ink-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
+.ink-textinput { position: absolute; transform: translateY(-50%); z-index: 35; min-width: 140px;
+  background: rgba(251,246,240,.92); border: 1.5px dashed var(--ink); border-radius: 8px;
+  padding: 4px 8px; font-family: Lacquer, cursive; outline: none; }
