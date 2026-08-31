@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=28";
-import { EventsPage } from "./events.js?v=28";
-import { AnnouncementsPage } from "./announcements.js?v=28";
-import { MembersPage } from "./members.js?v=28";
-import { MoneyPage } from "./money.js?v=28";
-import { SettingsPage } from "./settings.js?v=28";
-import { PartnershipsPage } from "./partnerships.js?v=28";
+import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=29";
+import { EventsPage } from "./events.js?v=29";
+import { AnnouncementsPage } from "./announcements.js?v=29";
+import { MembersPage } from "./members.js?v=29";
+import { MoneyPage } from "./money.js?v=29";
+import { SettingsPage } from "./settings.js?v=29";
+import { PartnershipsPage } from "./partnerships.js?v=29";
 
 /* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
    on the left, and every facilitator section as a tab on the right — all of
@@ -48,12 +48,19 @@ function PhonePreview() {
 }
 
 export function Dashboard(props) {
-  const { go, sub, community } = props;
+  const { go, sub, community, communities, pickComm } = props;
   const tab = TABS.some(([k]) => k === sub) ? sub : "home";
+  const pickable = (communities || []).filter((c) => !c.archived_at || c.id === community.id);
   return html`<div class="dash2">
     <${PhonePreview} />
     <div class="dash-right">
-      <div class="subnav">
+      <div class="subnav" style="align-items:center">
+        ${pickable.length > 1
+          ? html`<select class="commselect" value=${community.id} onChange=${(e) => pickComm(e.target.value)}
+              title="Viewing this community's slice — how its facilitators see the platform">
+              ${pickable.map((c) => html`<option value=${c.id}>${c.archived_at ? "🗂 " : ""}${c.name}</option>`)}
+            </select>`
+          : null}
         ${TABS.map(([k, label]) => html`<button class=${tab === k ? "on" : ""}
           onClick=${() => go(k === "home" ? "dashboard" : "dashboard/" + k)}>${label}</button>`)}
       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=28";
+import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=29";
 
 /* Platform KPI strip — owner-only tiles above the community grid.
    Numbers come from the platform_kpis() RPC (server-side, auth-aware);

@@ -1,15 +1,15 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=28";
-import { Dashboard } from "./dashboard.js?v=28";
-import { SharedMap } from "./sharedmap.js?v=28";
-import { Overview } from "./overview.js?v=28";
-import { DataPage } from "./datatable.js?v=28";
-import { CRMPage } from "./crm.js?v=28";
-import { IssuesPage } from "./issues.js?v=28";
-import { UpNextPage } from "./upnext.js?v=28";
-import { AdsPage } from "./ads.js?v=28";
+import { html, Avatar } from "./ui.js?v=29";
+import { Dashboard } from "./dashboard.js?v=29";
+import { SharedMap } from "./sharedmap.js?v=29";
+import { Overview } from "./overview.js?v=29";
+import { DataPage } from "./datatable.js?v=29";
+import { CRMPage } from "./crm.js?v=29";
+import { IssuesPage } from "./issues.js?v=29";
+import { UpNextPage } from "./upnext.js?v=29";
+import { AdsPage } from "./ads.js?v=29";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -232,25 +232,6 @@ function App() {
   const community = communities.find((c) => c.id === commId) || null;
   const pickComm = (id) => { localStorage.setItem("ca.comm", id); setCommId(id); };
 
-  /* ---- monthly revenue figure for the top bar ---- */
-  const [barTotal, setBarTotal] = useState(null);
-  useEffect(() => {
-    if (!community) return;
-    let live = true;
-    (async () => {
-      const first = new Date(); first.setDate(1);
-      const iso = first.toISOString().slice(0, 10);
-      const [{ data: led }, { count }] = await Promise.all([
-        client.from("ledger").select("amount_cents").eq("community_id", community.id).gte("happened_on", iso),
-        client.from("community_members").select("*", { count: "exact", head: true }).eq("community_id", community.id).eq("status", "member"),
-      ]);
-      if (!live) return;
-      const ledSum = (led || []).reduce((a, r) => a + r.amount_cents, 0);
-      setBarTotal(ledSum + (count || 0) * (community.membership_price_cents || 0));
-    })();
-    return () => { live = false; };
-  }, [community?.id, community?.membership_price_cents, page]);
-
   if (!client) return html`<div class="login"><h1>Setup needed</h1><p>config.js is missing its Supabase URL/key. Deploys write it from repo secrets.</p></div>`;
   if (session === undefined) return html`<div class="boot"><div class="boot-mark"><span class="dot pink"></span><span class="dot teal"></span></div><div class="boot-text">collide</div></div>`;
   if (!session) return html`<${Login} onSent=${sendLink} sent=${sent} error=${authErr} />`;
@@ -265,10 +246,6 @@ function App() {
       <div class="nav">
         ${PAGES.filter((p) => (p !== "data" && p !== "crm") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
       </div>
-      ${page === "dashboard" && barTotal != null && html`<span class="money">${money(barTotal)}</span>`}
-      ${page === "dashboard" && communities.length > 0 && html`<select class="commselect" value=${commId} onChange=${(e) => pickComm(e.target.value)} title="Viewing this community's slice — how its facilitators see the platform">
-        ${communities.filter((c) => !c.archived_at || c.id === commId).map((c) => html`<option value=${c.id}>${c.archived_at ? "🗂 " : ""}${c.name}</option>`)}
-      </select>`}
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
       <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
