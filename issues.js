@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=26";
+import { html, Avatar, cityName } from "./ui.js?v=27";
 
 /* Issues — the app's telemetry (client_errors) reported for humans:
    summary metrics, then errors grouped sentry-style by normalized message +

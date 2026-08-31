@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=26";
+import { html, Avatar, Modal, niceDate, niceTime, mediaUrl, uploadMedia, moneyExact, todayStr } from "./ui.js?v=27";
 
 const expired = (e) => !!e.expires_at && new Date(e.expires_at).getTime() < Date.now();
 
@@ -44,6 +44,8 @@ export function EventsPage({ client, community, session, flash }) {
           <div class="d">${e.date ? niceDate(e.date) : (e.when_bucket || "soon").replace(/_/g, " ")}${e.starts_at ? " · " + niceTime(e.starts_at) : (e.at_time ? " · " + e.at_time : "")}${(e.location || e.place) ? " · 📍 " + (e.location || e.place) : ""}</div>
         </div>
         <div class="rowactions">
+          <a class="btn small ghost" style="text-decoration:none" title="Download .ics — add to any calendar"
+            href=${"https://pjxvvwcnjjizdtiutpxd.supabase.co/functions/v1/ics?event=" + e.id}>📅</a>
           <button class="btn small ghost" onClick=${() => setRoster(e)}>RSVPs</button>
           <button class="btn small ghost" onClick=${() => setEditing(e)}>Edit</button>
           <button class="btn small danger" onClick=${() => remove(e)}>Delete</button>
