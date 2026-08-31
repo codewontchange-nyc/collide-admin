@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=33";
+import { html } from "./ui.js?v=34";
 
 /* Map ink — vector drawing on top of the city map artwork.
    Elements live in a 0–1000 normalized space (viewBox stretched over the
@@ -107,6 +107,7 @@ export function MapInk({ client, city, flash, onExit, saved, onSaved }) {
   const down = (ev) => {
     ev.stopPropagation(); ev.preventDefault();
     if (textAt) return;                                  // finish the text box first
+    if (!svgRef.current?.getBoundingClientRect().width) return;   // layout not settled — a stroke now would be NaN
     const [x, y] = norm(ev);
     if (tool === "eraser") { eraseAt(ev); return; }
     if (tool === "text") { setTextAt({ x, y }); return; }

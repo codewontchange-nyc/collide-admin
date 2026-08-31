@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=33";
-import { MapInk, InkOverlay } from "./drawtools.js?v=33";
-import { EMOJI } from "./emoji-data.js?v=33";
+import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=34";
+import { MapInk, InkOverlay } from "./drawtools.js?v=34";
+import { EMOJI } from "./emoji-data.js?v=34";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -118,7 +118,9 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
 
   const pickCity = (c) => { localStorage.setItem("ca.mapcity", c); setCfg(undefined); setCity(c); };
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const my = ++loadSeq.current;   // guard: a stale load must never paint another city's pins
     const [c, e, k, p, d] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
       client.from("map_events").select("*").eq("city", city).order("created_at"),
@@ -126,6 +128,9 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       client.from("pois").select("*").eq("city", city),
       client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
     ]);
+    if (my !== loadSeq.current) return;
+    const err = [c, e, k, p, d].find((r) => r.error);
+    if (err) flash("Map load failed: " + err.error.message);
     setCfg(c.data || null);
     setInk(d.data?.elements || []);
     setEvents((e.data || []).filter(alive));
@@ -141,6 +146,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       .on("postgres_changes", { event: "*", schema: "public", table: "map_config" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "pois" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "map_drawings" }, load)
       .subscribe();
     return () => { try { client.removeChannel(ch); } catch {} };
   }, [client, load]);
@@ -194,12 +200,15 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     try {
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
       const path = `bg-${city}-${Date.now()}.${ext}`;
-      const { error } = await client.storage.from("map").upload(path, file, { contentType: file.type || "image/jpeg", upsert: true });
+      // versioned path per upload → safe to cache forever (no-cache artwork made every map open re-download it)
+      const { error } = await client.storage.from("map").upload(path, file, { contentType: file.type || "image/jpeg", upsert: true, cacheControl: "31536000" });
       if (error) throw error;
       // one artwork row per city — first upload opens the city
       const { error: e2 } = await client.from("map_config").upsert(
         { city, image_path: path, updated_at: new Date().toISOString() }, { onConflict: "city" });
       if (e2) throw e2;
+      // keep the cities-table copy in sync — the two had drifted
+      await client.from("cities").update({ map_image_path: path }).eq("code", city);
       flash(`${cityName(city)} artwork updated 🗺️`);
       load();
     } catch (e) { flash(e.message || String(e)); }
@@ -242,9 +251,10 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     ${img === undefined ? html`<div class="empty">Loading map…</div>`
       : !img ? html`<div class="empty">No ${cityName(city)} artwork yet — the cartographer is still inking 🖋️<br/><span class="tiny muted">Upload artwork above to open this city's map.</span></div>`
       : html`<div class=${"smap" + (compact ? " compact" : "")} ref=${wrap} onClick=${onMapClick}>
-          <img class="smap-img" src=${img} alt="Community map" draggable=${false}
+          <img class="smap-img" src=${img} alt="Community map" draggable=${false} decoding="async"
             ref=${(el) => { if (el && el.complete && el.naturalWidth) setAspect(el.naturalWidth / el.naturalHeight); }}
-            onLoad=${(e) => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)} />
+            onLoad=${(e) => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
+            onError=${() => { flash(`${cityName(city)} artwork failed to load from storage — try re-uploading it`); setCfg(null); }} />
           <${Clouds} />
           <${Birds} />
           ${pois.map((p) => html`<button key=${"p" + p.id} class="map-poi" title=${p.name}
