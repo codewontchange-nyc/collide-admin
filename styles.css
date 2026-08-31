@@ -422,3 +422,15 @@ a { color: inherit; }
   padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 .ads-asset:last-child { border-bottom: 0; }
 .reading { max-width: 860px; }   /* editorial/reading column inside a full-width page */
+
+/* ---- Moderation page ---- */
+.mod-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.mod-row { display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; margin-bottom: 10px; }
+.mod-row.off { opacity: .62; background: repeating-linear-gradient(-45deg, var(--surface) 0 14px, #f7efe6 14px 28px); }
+.mod-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: none; border: 1px solid var(--line); }
+.mod-thumb.ph { display: flex; align-items: center; justify-content: center; font-size: 24px; background: var(--wash, #f4ede4); }
+.mod-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mod-title { font-size: 13.5px; }
+.mod-text { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.mod-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.pillstat.danger { background: #fdeae6; color: var(--danger); }

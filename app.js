@@ -1,15 +1,16 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar } from "./ui.js?v=30";
-import { Dashboard } from "./dashboard.js?v=30";
-import { SharedMap } from "./sharedmap.js?v=30";
-import { Overview } from "./overview.js?v=30";
-import { DataPage } from "./datatable.js?v=30";
-import { CRMPage } from "./crm.js?v=30";
-import { IssuesPage } from "./issues.js?v=30";
-import { UpNextPage } from "./upnext.js?v=30";
-import { AdsPage } from "./ads.js?v=30";
+import { html, Avatar } from "./ui.js?v=31";
+import { Dashboard } from "./dashboard.js?v=31";
+import { SharedMap } from "./sharedmap.js?v=31";
+import { Overview } from "./overview.js?v=31";
+import { DataPage } from "./datatable.js?v=31";
+import { CRMPage } from "./crm.js?v=31";
+import { IssuesPage } from "./issues.js?v=31";
+import { UpNextPage } from "./upnext.js?v=31";
+import { AdsPage } from "./ads.js?v=31";
+import { ModerationPage } from "./moderation.js?v=31";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -62,8 +63,8 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map", "upnext", "data", "crm", "ads", "issues"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", ads: "Ads", issues: "Issues", upnext: "Up Next" };
+const PAGES = ["overview", "dashboard", "map", "upnext", "data", "crm", "mod", "ads", "issues"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", mod: "Moderation", ads: "Ads", issues: "Issues", upnext: "Up Next" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
 const DATA_SUBS = ["communities", "announcements", "events", "members", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
@@ -244,7 +245,7 @@ function App() {
     <div class="topbar">
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
-        ${PAGES.filter((p) => (p !== "data" && p !== "crm") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
+        ${PAGES.filter((p) => (p !== "data" && p !== "crm" && p !== "mod") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
       </div>
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
@@ -263,6 +264,10 @@ function App() {
         ? (isOwner
           ? html`<${CRMPage} ...${ctx} sub=${route.sub} />`   /* funnel + drips — owners only */
           : html`<div class="empty">The CRM is owner-only.</div>`)
+        : page === "mod"
+        ? (isOwner
+          ? html`<${ModerationPage} ...${ctx} />`  /* all member content, hide/restore/delete — owner-only */
+          : html`<div class="empty">Moderation is owner-only.</div>`)
         : page === "ads"
         ? html`<${AdsPage} ...${ctx} />`      /* funnel creative — formats, PNG export, deeplinks */
         : page === "upnext"
