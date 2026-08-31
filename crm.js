@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=29";
+import { html, Avatar, cityName } from "./ui.js?v=30";
 
 /* CRM — watch users move down the maturity funnel and run the drip engine.
    Funnel: stages derived live from real actions (crm_users RPC). Campaigns:
@@ -188,7 +188,7 @@ export function CRMPage({ client, flash, sub }) {
     return () => { live = false; };
   }, [client, tab]);
 
-  return html`<div class="page" style="max-width:none">
+  return html`<div class="page">
     <div class="pagehead">
       <h2>CRM <span class="muted" style="font:400 13px var(--body)">user maturity funnel + the drip engine nudging everyone toward their next step</span></h2>
     </div>

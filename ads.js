@@ -1,5 +1,5 @@
 import { useState, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=29";
+import { html } from "./ui.js?v=30";
 
 /* Ads — the funnel toolkit. Pick a format (standard social + web sizes) and
    a message, preview it in the real brand system, download a true-size PNG,
@@ -109,7 +109,7 @@ export function AdsPage({ flash }) {
     setBusy(false);
   };
 
-  return html`<div class="page" style="max-width:1080px">
+  return html`<div class="page">
     <div class="pagehead">
       <h2>Ads <span class="muted" style="font:400 13px var(--body)">funnel creative — pick a format, download the asset, copy the link</span></h2>
     </div>

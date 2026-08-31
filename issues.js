@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, cityName } from "./ui.js?v=29";
+import { html, Avatar, cityName } from "./ui.js?v=30";
 
 /* Issues — the app's telemetry (client_errors) reported for humans:
    summary metrics, then errors grouped sentry-style by normalized message +
@@ -88,7 +88,7 @@ export function IssuesPage({ client, isOwner, flash }) {
     if (error) flash(error.message); else { flash("Cleared ✓"); load(); }
   };
 
-  return html`<div class="page" style="max-width:1080px">
+  return html`<div class="page">
     <div class="pagehead">
       <h2>Issues <span class="muted" style="font:400 13px var(--body)">telemetry from the app and this console, grouped</span></h2>
       <button class="btn small ghost" onClick=${load}>↻ refresh</button>

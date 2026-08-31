@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=29";
+import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=30";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;
@@ -106,7 +106,8 @@ export function UpNextPage({ client, session, flash }) {
     <button class="btn small danger" onClick=${() => remove(s)}>Delete</button>
   </div>`;
 
-  return html`<div class="page" style="max-width:820px">
+  return html`<div class="page">
+    <div class="reading">
     <div class="pagehead">
       <h2>Up Next <span class="muted" style="font:400 13px var(--body)">the city journal — the current post leads members' Up next feed</span></h2>
       ${!editing && html`<button class="btn" onClick=${() => setEditing({})}>✍️ New post</button>`}
@@ -161,6 +162,7 @@ export function UpNextPage({ client, session, flash }) {
         </div>
         <${Actions} s=${s} />
       </div>`)}`}
+    </div>
   </div>`;
 }
 

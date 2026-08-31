@@ -139,7 +139,7 @@ a { color: inherit; }
 .poi .c { font-size: 10.5px; color: var(--muted); }
 
 /* ---------- generic pages (each one a card section) ---------- */
-.page { max-width: 1080px; }
+.page { max-width: none; }   /* full-width shells everywhere; cap reading columns inside, not the page */
 .dash-right > .page, .main > .page { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-1); padding: 16px 18px; }
 .page h2 { font: 600 20px var(--display); margin: 0 0 14px; }
 .pagehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
@@ -421,3 +421,4 @@ a { color: inherit; }
 .ads-asset { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 .ads-asset:last-child { border-bottom: 0; }
+.reading { max-width: 860px; }   /* editorial/reading column inside a full-width page */

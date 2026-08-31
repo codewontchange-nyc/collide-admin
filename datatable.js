@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=29";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=30";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -535,7 +535,7 @@ export function DataPage({ client, communities, session, flash, sub }) {
 
   const metrics = useMemo(() => S.metrics(rows || []), [rows, tab]);
 
-  return html`<div class="page" style="max-width:none">
+  return html`<div class="page">
     <div class="pagehead">
       <h2>Data <span class="muted" style="font:400 13px var(--body)">every community, live tables — you have full permissions here</span></h2>
     </div>

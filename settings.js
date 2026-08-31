@@ -1,5 +1,5 @@
 import { useState } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, CITIES } from "./ui.js?v=29";
+import { html, Modal, CITIES } from "./ui.js?v=30";
 
 export function SettingsPage({ client, community, isOwner, session, flash }) {
   const [f, setF] = useState({
@@ -23,7 +23,8 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
     else { flash("Saved — refresh to see it everywhere"); }
   };
 
-  return html`<div class="page" style="max-width:560px">
+  return html`<div class="page">
+    <div style="max-width:560px">
     <h2>Settings</h2>
     <form onSubmit=${save}>
       <div class="field"><label>Community name</label><input required value=${f.name} onInput=${set("name")} /></div>
@@ -45,6 +46,7 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
       <p class="tiny muted" style="margin-top:8px">Facilitators are managed per-community on the Members page.</p>
     </div>`}
     ${creating && html`<${CreateModal} client=${client} session=${session} flash=${flash} onClose=${() => setCreating(false)} />`}
+    </div>
   </div>`;
 }
 
