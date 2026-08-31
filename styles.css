@@ -399,3 +399,25 @@ a { color: inherit; }
   .dash2 { flex-direction: column; }
   .phone-col { align-self: center; }
 }
+
+/* ---- Ads page ---- */
+.ads-grid { display: grid; grid-template-columns: 380px 1fr; gap: 26px; align-items: start; }
+@media (max-width: 900px) { .ads-grid { grid-template-columns: 1fr; } }
+.ads-formats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ads-format { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); padding: 8px 11px;
+  cursor: pointer; font-family: var(--body); }
+.ads-format b { font-size: 12.5px; }
+.ads-format span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ads-format i { font-size: 10.5px; color: var(--faint); font-style: normal; }
+.ads-format.on { border-color: var(--ink); background: var(--ink); }
+.ads-format.on b, .ads-format.on span, .ads-format.on i { color: var(--paper); }
+.ads-stage { border: 1.5px dashed var(--line); border-radius: 14px; padding: 18px; display: flex;
+  justify-content: center; background: repeating-conic-gradient(#f1eae2 0 25%, transparent 0 50%) 0 0/22px 22px; }
+.ads-stage > div { box-shadow: 0 6px 24px rgba(36,29,26,.18); }
+.ads-link { font: 12px/1.5 ui-monospace, monospace; background: var(--wash, #f4ede4); border-radius: 8px;
+  padding: 8px 10px; word-break: break-all; cursor: copy; border: 1px solid var(--line); }
+.ads-link:hover { border-color: var(--teal); }
+.ads-asset { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
+.ads-asset:last-child { border-bottom: 0; }

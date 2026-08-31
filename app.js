@@ -1,14 +1,15 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar, money } from "./ui.js?v=27";
-import { Dashboard } from "./dashboard.js?v=27";
-import { SharedMap } from "./sharedmap.js?v=27";
-import { Overview } from "./overview.js?v=27";
-import { DataPage } from "./datatable.js?v=27";
-import { CRMPage } from "./crm.js?v=27";
-import { IssuesPage } from "./issues.js?v=27";
-import { UpNextPage } from "./upnext.js?v=27";
+import { html, Avatar, money } from "./ui.js?v=28";
+import { Dashboard } from "./dashboard.js?v=28";
+import { SharedMap } from "./sharedmap.js?v=28";
+import { Overview } from "./overview.js?v=28";
+import { DataPage } from "./datatable.js?v=28";
+import { CRMPage } from "./crm.js?v=28";
+import { IssuesPage } from "./issues.js?v=28";
+import { UpNextPage } from "./upnext.js?v=28";
+import { AdsPage } from "./ads.js?v=28";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -61,8 +62,8 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map", "upnext", "data", "crm", "issues"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", issues: "Issues", upnext: "Up Next" };
+const PAGES = ["overview", "dashboard", "map", "upnext", "data", "crm", "ads", "issues"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", ads: "Ads", issues: "Issues", upnext: "Up Next" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
 const DATA_SUBS = ["communities", "announcements", "events", "members", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
@@ -285,6 +286,8 @@ function App() {
         ? (isOwner
           ? html`<${CRMPage} ...${ctx} sub=${route.sub} />`   /* funnel + drips — owners only */
           : html`<div class="empty">The CRM is owner-only.</div>`)
+        : page === "ads"
+        ? html`<${AdsPage} ...${ctx} />`      /* funnel creative — formats, PNG export, deeplinks */
         : page === "upnext"
         ? html`<${UpNextPage} ...${ctx} />`   /* city journal — staff write stories into the app's Up next */
         : page === "issues"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, niceDate } from "./ui.js?v=27";
-import { sendInvite } from "./datatable.js?v=27";
+import { html, Avatar, Modal, niceDate } from "./ui.js?v=28";
+import { sendInvite } from "./datatable.js?v=28";
 
 const APP_URL = "https://codewontchange-nyc.github.io/Collide";
 
