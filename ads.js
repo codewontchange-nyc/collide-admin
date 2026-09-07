@@ -1,5 +1,5 @@
-import { useState, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=34";
+import { useState, useRef, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
+import { html } from "./ui.js?v=35";
 
 /* Ads — the funnel toolkit. Pick a format (standard social + web sizes) and
    a message, preview it in the real brand system, download a true-size PNG,
@@ -79,10 +79,20 @@ function Ad({ f, v }) {
   </div>`;
 }
 
-export function AdsPage({ flash }) {
+const SHARE = "https://pjxvvwcnjjizdtiutpxd.supabase.co/functions/v1/share";
+
+export function AdsPage({ client, flash }) {
   const [fkey, setFkey] = useState("sq");
   const [vkey, setVkey] = useState("brand");
   const [dest, setDest] = useState(SITE);
+  const [events, setEvents] = useState([]);
+  const [evId, setEvId] = useState("");
+  useEffect(() => {
+    client.from("activities").select("id,title,date").eq("visibility", "public")
+      .or("date.gte." + new Date().toISOString().slice(0, 10) + ",and(date.is.null,expires_at.gt." + new Date().toISOString() + ")")
+      .order("date", { ascending: true, nullsFirst: false }).limit(50)
+      .then(({ data }) => { setEvents(data || []); if (data?.[0]) setEvId(data[0].id); });
+  }, [client]);
   const [src, setSrc] = useState("instagram");
   const [camp, setCamp] = useState("sept-launch");
   const [busy, setBusy] = useState(false);
@@ -91,7 +101,8 @@ export function AdsPage({ flash }) {
   const f = FORMATS.find((x) => x.key === fkey);
   const v = VARIANTS.find((x) => x.key === vkey);
   const scale = Math.min(560 / f.w, 480 / f.h, 1);
-  const link = `${dest}${dest.includes("?") ? "&" : "?"}utm_source=${src}&utm_medium=${src === "web" ? "display" : "paid"}&utm_campaign=${encodeURIComponent(camp || "launch")}`;
+  const base = dest === "event" ? `${SHARE}?e=${evId}` : dest;
+  const link = `${base}${base.includes("?") ? "&" : "?"}utm_source=${src}&utm_medium=${src === "web" ? "display" : "paid"}&utm_campaign=${encodeURIComponent(camp || "launch")}`;
 
   const copy = (t, msg) => { navigator.clipboard?.writeText(t); flash(msg); };
 
@@ -134,7 +145,12 @@ export function AdsPage({ flash }) {
             <select value=${dest} onChange=${(e) => setDest(e.target.value)}>
               <option value=${SITE}>Landing site</option>
               <option value=${APP}>App (sign up)</option>
+              <option value="event">Event invite (public landing)</option>
             </select></div>
+          ${dest === "event" && html`<div class="field"><label>Event</label>
+            <select value=${evId} onChange=${(e) => setEvId(e.target.value)}>
+              ${events.map((ev) => html`<option value=${ev.id}>${ev.title}${ev.date ? " · " + ev.date : ""}</option>`)}
+            </select></div>`}
           <div class="fieldrow">
             <div class="field"><label>Source</label>
               <select value=${src} onChange=${(e) => setSrc(e.target.value)}>
