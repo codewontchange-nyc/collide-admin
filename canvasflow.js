@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=36";
+import { html } from "./ui.js?v=37";
 
 /* Canvas — a Figma-style flow editor for the onboarding journeys.
    Mini phone screens laid left→right per flow with connectors, on a
@@ -32,8 +32,8 @@ function Editable({ text, cls, onEdit, onCommit }) {
 }
 
 /* one element inside a phone */
-function El({ el, onEdit, onCommit }) {
-  const cls = "cve cve-" + el.t;
+function El({ el, onEdit, onCommit, bound }) {
+  const cls = "cve cve-" + el.t + (bound ? " cve-bound" : "");
   if (el.t === "pills") {
     return html`<div class=${"cve cve-pillswrap"}>
       <span class="cve-pillrow">${el.text.split("|").map((p, i) => html`<span key=${i} class="cve-chip">${p.trim()}</span>`)}</span>
@@ -56,6 +56,8 @@ export function CanvasPage({ client, session, flash }) {
   const [saving, setSaving] = useState(false);
   const [versions, setVersions] = useState(null);   // null = drawer closed
   const [view, setView] = useState({ x: 20, y: 20, z: 0.85 });
+  const [copy, setCopy] = useState({});   // onboarding_copy: live text keyed, the CMS layer
+  const copyRef = useRef({});
   const docRef = useRef(null);
   const viewRef = useRef(view);
   const undoStack = useRef([]), redoStack = useRef([]);
@@ -71,7 +73,18 @@ export function CanvasPage({ client, session, flash }) {
   useEffect(() => {
     client.from("canvas_docs").select("doc").eq("id", "onboarding").single()
       .then(({ data, error }) => { if (error) flash(error.message); else setDoc(data.doc); });
+    client.from("onboarding_copy").select("key,text")
+      .then(({ data }) => { const m = Object.fromEntries((data || []).map((r) => [r.key, r.text])); copyRef.current = m; setCopy(m); });
   }, [client]);
+
+  // write a live-bound string straight to the CMS — users see it immediately
+  const writeCopy = async (key, text) => {
+    const next = { ...copyRef.current, [key]: text };
+    copyRef.current = next; setCopy(next);
+    const by = session?.user?.email || null;
+    const { error } = await client.from("onboarding_copy").upsert({ key, text, updated_at: new Date().toISOString(), updated_by: by }, { onConflict: "key" });
+    if (error) flash(error.message); else flash("Live — users see this now ✨");
+  };
 
   useEffect(() => {
     const onKey = (e) => {
@@ -222,19 +235,27 @@ export function CanvasPage({ client, session, flash }) {
           const first = [...byFlow[f]].sort((a, b) => a.x - b.x)[0];
           return html`<div key=${f} class="cv-flowlab" style=${`left:${first.x}px;top:${first.y - 34}px;color:${FLOW_COLORS[f] || "#8a7e75"}`}>${f}</div>`;
         })}
-        ${doc.screens.map((s) => html`<div key=${s.id} class="cv-phone" style=${`left:${s.x}px;top:${s.y}px`}>
+        ${doc.screens.map((s) => { const proposed = s.status === "proposed"; return html`<div key=${s.id} class=${"cv-phone" + (proposed ? " cv-proposed" : "")} style=${`left:${s.x}px;top:${s.y}px`}>
           <div class="cv-phead" onPointerDown=${dragScreen(s)} style=${`background:${FLOW_COLORS[s.flow] || "#8a7e75"}`}>
             <span key=${s.title} contentEditable spellcheck="false" onFocus=${() => { editingRef.current = true; }} onBlur=${commitTitle(s.id)}
               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
               onPointerDown=${(e) => e.stopPropagation()}>${s.title}</span>
+            <span class="cv-badge">${proposed ? "PROPOSED" : "LIVE"}</span>
             <button class="cv-x" onPointerDown=${(e) => e.stopPropagation()} onClick=${removeScreen(s.id)} title="Remove screen">×</button>
           </div>
           <div class="cv-screen">
-            ${s.els.map((el, i) => html`<${El} key=${s.id + ":" + i} el=${el}
-              onEdit=${() => { editingRef.current = true; }} onCommit=${commitText(s.id, i)} />`)}
+            ${s.els.map((el, i) => {
+              const bound = el.key && el.key in copy;
+              const shownText = bound ? copy[el.key] : el.text;
+              const onCommit = el.key
+                ? (text) => { const t = text.replace(/\n+/g, " ").trim(); if (t && t !== (copyRef.current[el.key] ?? el.text)) writeCopy(el.key, t); }
+                : commitText(s.id, i);
+              return html`<${El} key=${s.id + ":" + i} el=${{ ...el, text: shownText }} bound=${bound}
+                onEdit=${() => { editingRef.current = true; }} onCommit=${onCommit} />`;
+            })}
             <button class="cv-addel" onClick=${addEl(s.id)}>+ text</button>
           </div>
-        </div>`)}
+        </div>`; })}
       </div>
 
       ${versions && html`<div class="cv-drawer">

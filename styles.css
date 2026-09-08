@@ -504,3 +504,11 @@ a { color: inherit; }
   border: 1.5px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(36,29,26,.16); overflow-y: auto; z-index: 20; }
 .cv-dhead { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; }
 .cv-vrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-top: 1px dashed var(--line); font-size: 12.5px; }
+
+/* ---- Canvas: live vs proposed ---- */
+.cv-badge { font: 700 7px var(--body); letter-spacing: .1em; color: rgba(255,255,255,.9); border: 1px solid rgba(255,255,255,.5); border-radius: 4px; padding: 1px 4px; margin-left: auto; }
+.cv-phone .cv-x { margin-left: 6px; }
+.cv-proposed { border-style: dashed; border-color: #b9ab99; opacity: .96; }
+.cv-proposed .cv-screen { background: repeating-linear-gradient(-45deg, var(--paper,#fbf6f0) 0 12px, #f5ede1 12px 24px); }
+.cve-bound { box-shadow: inset 0 -2px 0 rgba(24,133,122,.35); }
+.cve-bound:hover { box-shadow: inset 0 -2px 0 var(--teal), 0 0 0 1.5px #e8ddcf !important; }
