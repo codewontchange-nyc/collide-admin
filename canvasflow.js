@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=37";
+import { html } from "./ui.js?v=38";
 
 /* Canvas — a Figma-style flow editor for the onboarding journeys.
    Mini phone screens laid left→right per flow with connectors, on a
@@ -31,24 +31,38 @@ function Editable({ text, cls, onEdit, onCommit }) {
     onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}></span>`;
 }
 
-/* one element inside a phone */
+/* one element inside a phone — styled to mirror the real app screens */
 function El({ el, onEdit, onCommit, bound }) {
   const cls = "cve cve-" + el.t + (bound ? " cve-bound" : "");
   if (el.t === "pills") {
     return html`<div class=${"cve cve-pillswrap"}>
-      <span class="cve-pillrow">${el.text.split("|").map((p, i) => html`<span key=${i} class="cve-chip">${p.trim()}</span>`)}</span>
+      <span class="cve-pillrow">${el.text.split("|").map((p, i) => html`<span key=${i} class=${"cve-chip" + (i === 0 ? " on" : "")}>${p.trim()}</span>`)}</span>
       <${Editable} text=${el.text} cls="cve-pilledit" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
   }
   if (el.t === "avatars") {
     return html`<div class=${cls}>
-      <span class="cve-avrow">${[0, 1, 2].map((i) => html`<span key=${i} class="cve-av" style=${`background:${["#e85d75", "#18857a", "#f0a830"][i]}`}></span>`)}</span>
-      <${Editable} text=${el.text} cls="" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
+      <span class="cve-avrow">${[0, 1, 2, 3].map((i) => html`<span key=${i} class="cve-av" style=${`background:${["#e85d75", "#18857a", "#f0a830", "#3b6fb6"][i]}`}></span>`)}</span>
+      <${Editable} text=${el.text} cls="cve-avname" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
   }
   if (el.t === "toggle") {
-    return html`<div class=${cls}><span class="cve-check">✓</span><${Editable} text=${el.text} cls="" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
+    return html`<div class=${cls}><span class="cve-check">✓</span><${Editable} text=${el.text} cls="cve-toggletext" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
+  }
+  if (el.t === "mast") {
+    // the Bugle masthead: mark + kicker + hairline rules
+    return html`<div class="cve cve-mast"><span class="cve-mastmark"><span class="cve-md p"></span><span class="cve-md t"></span></span>
+      <${Editable} text=${el.text} cls="cve-mastkick" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
+  }
+  if (el.t === "blank") {
+    return html`<div class="cve cve-blankline"><${Editable} text=${el.text} cls="cve-blank" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
   }
   return html`<${Editable} text=${el.text} cls=${cls} onEdit=${onEdit} onCommit=${onCommit} />`;
 }
+
+/* iPhone chrome so screens read as real devices, not cards */
+const PhoneChrome = () => html`<div class="cv-status">
+  <span class="cv-time">9:41</span>
+  <span class="cv-stat"><span class="cv-sig"></span><span class="cv-wifi"></span><span class="cv-batt"></span></span>
+</div>`;
 
 export function CanvasPage({ client, session, flash }) {
   const [doc, setDocState] = useState(null);
@@ -243,7 +257,8 @@ export function CanvasPage({ client, session, flash }) {
             <span class="cv-badge">${proposed ? "PROPOSED" : "LIVE"}</span>
             <button class="cv-x" onPointerDown=${(e) => e.stopPropagation()} onClick=${removeScreen(s.id)} title="Remove screen">×</button>
           </div>
-          <div class="cv-screen">
+          <div class=${"cv-screen" + (s.theme ? " cv-th-" + s.theme : "")}>
+            <${PhoneChrome} />
             ${s.els.map((el, i) => {
               const bound = el.key && el.key in copy;
               const shownText = bound ? copy[el.key] : el.text;
@@ -254,6 +269,7 @@ export function CanvasPage({ client, session, flash }) {
                 onEdit=${() => { editingRef.current = true; }} onCommit=${onCommit} />`;
             })}
             <button class="cv-addel" onClick=${addEl(s.id)}>+ text</button>
+            <div class="cv-home"></div>
           </div>
         </div>`; })}
       </div>

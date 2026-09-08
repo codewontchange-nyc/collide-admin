@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=37";
+import { html } from "./ui.js?v=38";
 
 /* Map ink — vector drawing on top of the city map artwork.
    Elements live in a 0–1000 normalized space (viewBox stretched over the
