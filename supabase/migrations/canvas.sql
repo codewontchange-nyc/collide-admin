@@ -1,0 +1,24 @@
+
+-- Canvas: Figma-style flow editor for onboarding journeys. Applied live 2026-09-08.
+create table if not exists canvas_docs (
+  id text primary key,
+  name text not null,
+  doc jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+create table if not exists canvas_versions (
+  id uuid primary key default gen_random_uuid(),
+  doc_id text not null references canvas_docs(id) on delete cascade,
+  doc jsonb not null,
+  saved_at timestamptz not null default now(),
+  saved_by text,
+  label text
+);
+alter table canvas_docs enable row level security;
+alter table canvas_versions enable row level security;
+create policy cvd_staff on canvas_docs for all to authenticated using (is_any_staff()) with check (is_any_staff());
+create policy cvv_staff on canvas_versions for all to authenticated using (is_any_staff()) with check (is_any_staff());
+insert into canvas_docs (id, name, doc, updated_by)
+values ('onboarding', 'Onboarding flows', $json${"screens": [{"id": "w1", "flow": "Website sign-up", "x": 60, "y": 60, "title": "Landing site", "els": [{"t": "kicker", "text": "EST. 2026 \u00b7 FIND YOUR PEOPLE"}, {"t": "h", "text": "Always something to look forward to."}, {"t": "p", "text": "Casual plans & small communities, on a hand-drawn map of your city."}, {"t": "btn", "text": "Sign up \u2014 it's free"}]}, {"id": "w2", "flow": "Website sign-up", "x": 320, "y": 60, "title": "Email entry", "els": [{"t": "emoji", "text": "\ud83d\udc4b"}, {"t": "h", "text": "Come on in"}, {"t": "input", "text": "you@email.com"}, {"t": "btn", "text": "Send me a magic link"}, {"t": "fine", "text": "Free, no passwords."}]}, {"id": "w3", "flow": "Website sign-up", "x": 580, "y": 60, "title": "Check email", "els": [{"t": "emoji", "text": "\ud83d\udc8c"}, {"t": "h", "text": "Check your email"}, {"t": "p", "text": "Tap the link we just sent and you're in."}]}, {"id": "w4", "flow": "Website sign-up", "x": 840, "y": 60, "title": "Pick your city", "els": [{"t": "h", "text": "Where's home?"}, {"t": "pills", "text": "NYC|ATL|CHI|LA"}, {"t": "p", "text": "Your city sets your map, your feed, your people."}, {"t": "btn", "text": "Set my city"}]}, {"id": "w5", "flow": "Website sign-up", "x": 1100, "y": 60, "title": "The map", "els": [{"t": "map", "text": "\ud83d\uddfa"}, {"t": "h", "text": "Welcome to the map"}, {"t": "p", "text": "Pins are real plans. Tap one, say you're in."}]}, {"id": "i1", "flow": "Event invite", "x": 60, "y": 600, "title": "Shared link unfurl", "els": [{"t": "card", "text": "\ud83d\udd17 collide.city"}, {"t": "h", "text": "The Found Day \u2014 a five-stop hunt"}, {"t": "p", "text": "5 going \u00b7 hosted by Rose Sounds \u2014 join the plan on Collide."}]}, {"id": "i2", "flow": "Event invite", "x": 320, "y": 600, "title": "Invite landing", "els": [{"t": "kicker", "text": "YOU'RE INVITED"}, {"t": "h", "text": "The Found Day"}, {"t": "avatars", "text": "Jules, Tommy, Priya + 2 more are in"}, {"t": "pill", "text": "Hosted in Rose Sounds \u00b7 8 members"}, {"t": "toggle", "text": "Also join Rose Sounds \u2014 this invite vouches you in"}, {"t": "btn", "text": "I'm in \u2014 sign me up \ud83d\ude4c"}]}, {"id": "i3", "flow": "Event invite", "x": 580, "y": 600, "title": "Check email", "els": [{"t": "emoji", "text": "\ud83d\udc8c"}, {"t": "h", "text": "Check your email"}, {"t": "p", "text": "Tap the link \u2014 you'll land right in the plan."}]}, {"id": "i4", "flow": "Event invite", "x": 840, "y": 600, "title": "Auto-join", "els": [{"t": "emoji", "text": "\ud83c\udf89"}, {"t": "h", "text": "You're in \u2014 both of them"}, {"t": "p", "text": "Your RSVP and community membership happen on arrival."}, {"t": "btn", "text": "Open the event \u2192"}]}, {"id": "i5", "flow": "Event invite", "x": 1100, "y": 600, "title": "Event room", "els": [{"t": "h", "text": "Sunrise Miles + Waffle House"}, {"t": "pill", "text": "6 in \u00b7 Beltline Breakfast Club"}, {"t": "p", "text": "Chat unlocks, itinerary opens, calendar one tap away."}, {"t": "input", "text": "Message\u2026"}]}, {"id": "c1", "flow": "Add to circle", "x": 60, "y": 1140, "title": "Share your code", "els": [{"t": "h", "text": "Add me on Collide"}, {"t": "pill", "text": "@maya \u00b7 65bc224b"}, {"t": "p", "text": "Share your connect code anywhere \u2014 text, IG, in person."}]}, {"id": "c2", "flow": "Add to circle", "x": 320, "y": 1140, "title": "Connect screen", "els": [{"t": "avatars", "text": "Maya Flows"}, {"t": "h", "text": "Maya wants to connect"}, {"t": "p", "text": "Circles are 6\u20138 people who always include you."}, {"t": "btn", "text": "\uff0b Add to my circle"}]}, {"id": "c3", "flow": "Add to circle", "x": 580, "y": 1140, "title": "Your circle", "els": [{"t": "h", "text": "Your circle"}, {"t": "avatars", "text": "6 faces, always yours"}, {"t": "p", "text": "Yaps, invites and plans flow through your circle first."}]}]}$json$::jsonb, 'seed')
+on conflict (id) do nothing;
