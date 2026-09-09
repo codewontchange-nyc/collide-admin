@@ -8,7 +8,7 @@ import { html } from "./ui.js?v=40";
    drawer restores any of them). Document lives in canvas_docs (staff RLS),
    versions in canvas_versions. */
 
-const FLOW_COLORS = { "Website sign-up": "#18857a", "Event invite": "#e85d75", "Add to circle": "#f0a830" };
+const FLOW_COLORS = { "Website sign-up": "#18857a", "Event invite": "#e85d75", "Add to circle": "#f0a830", "First login": "#3b6fb6" };
 const PHONE_W = 210, PHONE_H = 420;
 
 const ago = (iso) => {
@@ -17,6 +17,52 @@ const ago = (iso) => {
   const h = Math.round(m / 60);
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 };
+
+
+/* First-login onboarding v1 — staged once into the doc (doc.ftu_v1 guards).
+   Replaces any screens marked "proposed"; Save persists the swap (history
+   keeps the old version). Copy keys are the CMS keys the real build reads. */
+const FTU_SCREENS = [
+  { title: "Welcome", els: [
+    { t: "mast", text: "FIRST EDITION · WELCOME" },
+    { t: "h", text: "The city\u2019s been waiting for you.", key: "ftu.welcome.title" },
+    { t: "p", text: "Collide is the neighborhood paper that talks back \u2014 hand-drawn maps, real plans, people worth running into.", key: "ftu.welcome.body" },
+    { t: "fine", text: "Two quick things before you land." },
+    { t: "btn", text: "Let\u2019s get you in \u203a", key: "ftu.welcome.cta" },
+  ] },
+  { title: "Profile photo", els: [
+    { t: "kicker", text: "STEP ONE · YOUR FACE" },
+    { t: "emoji", text: "\ud83d\udcf7" },
+    { t: "h", text: "Get your face in the paper.", key: "ftu.face.title" },
+    { t: "p", text: "Upload one photo and the ink desk sketches you into a hand-drawn portrait \u2014 that\u2019s the face the city sees.", key: "ftu.face.body" },
+    { t: "fine", text: "Your photo stays private \u2014 only the sketch runs in the paper." },
+    { t: "btn", text: "Upload a photo", key: "ftu.face.cta" },
+    { t: "fine", text: "Skip for now \u2014 stay a mystery", key: "ftu.face.skip" },
+  ] },
+  { title: "Notifications", els: [
+    { t: "kicker", text: "STEP TWO · THE KNOCK" },
+    { t: "card", text: "\ud83d\udd14 The mailbag \u2014 Maya replied to your announcement · just now" },
+    { t: "h", text: "Know when the city calls back.", key: "ftu.notifs.title" },
+    { t: "p", text: "A reply lands in your mailbag, a plate gets approved, an event chat lights up \u2014 a knock only when it matters.", key: "ftu.notifs.body" },
+    { t: "btn", text: "Turn on notifications", key: "ftu.notifs.cta" },
+    { t: "fine", text: "Maybe later \u2014 the OS prompt only fires after the tap", key: "ftu.notifs.skip" },
+  ] },
+  { title: "Lands on the map", els: [
+    { t: "kicker", text: "LANDING" },
+    { t: "map", text: "NYC" },
+    { t: "h", text: "Straight into the city." },
+    { t: "fine", text: "Existing map screen \u2014 no further gates." },
+  ] },
+];
+function migrateFtu(d) {
+  if (!d || d.ftu_v1) return d;
+  const kept = (d.screens || []).filter((s) => s.status !== "proposed");
+  const baseY = kept.length ? Math.max(...kept.map((s) => s.y + PHONE_H)) + 150 : 60;
+  const screens = [...kept, ...FTU_SCREENS.map((sc, i) => ({
+    ...sc, id: "ftu" + (i + 1), flow: "First login", status: "proposed", x: 40 + i * 270, y: baseY,
+  }))];
+  return { ...d, ftu_v1: true, screens };
+}
 
 /* An editable text node. Preact won't reconcile text INSIDE a
    contentEditable, so we write it to the DOM ourselves via a ref effect —
@@ -86,7 +132,13 @@ export function CanvasPage({ client, session, flash }) {
 
   useEffect(() => {
     client.from("canvas_docs").select("doc").eq("id", "onboarding").maybeSingle()
-      .then(({ data, error }) => { if (error) flash(error.message); setDoc(data?.doc || { screens: [] }); });
+      .then(({ data, error }) => {
+        if (error) flash(error.message);
+        const d0 = data?.doc || { screens: [] };
+        const d1 = migrateFtu(d0);
+        setDoc(d1);
+        if (d1 !== d0) { setDirty(true); flash("First-login flow staged (old proposal cleared) \u2014 Save to keep it"); }
+      });
     client.from("onboarding_copy").select("key,text")
       .then(({ data }) => { const m = Object.fromEntries((data || []).map((r) => [r.key, r.text])); copyRef.current = m; setCopy(m); });
   }, [client]);

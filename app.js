@@ -11,7 +11,7 @@ import { IssuesPage } from "./issues.js?v=40";
 import { UpNextPage } from "./upnext.js?v=40";
 import { AdsPage } from "./ads.js?v=40";
 import { ModerationPage } from "./moderation.js?v=40";
-import { CanvasPage } from "./canvasflow.js?v=40";
+import { CanvasPage } from "./canvasflow.js?v=41";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
