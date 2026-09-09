@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=43";
+import { html } from "./ui.js?v=44";
 
 /* Canvas — a Figma-style flow editor for the onboarding journeys.
    Mini phone screens laid left→right per flow with connectors, on a
