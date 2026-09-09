@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=39";
+import { html } from "./ui.js?v=40";
 
 /* Ads — the funnel toolkit. Pick a format (standard social + web sizes) and
    a message, preview it in the real brand system, download a true-size PNG,

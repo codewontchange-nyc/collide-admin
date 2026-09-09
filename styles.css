@@ -214,6 +214,8 @@ a { color: inherit; }
 .map-pin .pl { position: absolute; top: 105%; left: 50%; transform: translateX(-50%); white-space: nowrap;
   font: 600 11px var(--body); background: #ffffffd9; border: 1px solid #111; border-radius: 999px; padding: 1px 8px; pointer-events: none; }
 .map-pin.community-pin { background: var(--amber-soft); }
+.map-pin.map-yap { background: #d7ece9; border-color: var(--teal, #18857a); width: 34px; height: 34px; }
+.map-pin.map-yap .pe { font-size: 16px; }
 .smap.compact .map-pin { width: 34px; height: 34px; pointer-events: none; }
 .smap.compact .map-pin .pe { font-size: 15px; }
 .smap.compact .map-pin .pl { display: none; }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=39";
-import { MapInk, InkOverlay } from "./drawtools.js?v=39";
-import { EMOJI } from "./emoji-data.js?v=39";
+import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=40";
+import { MapInk, InkOverlay } from "./drawtools.js?v=40";
+import { EMOJI } from "./emoji-data.js?v=40";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
    + map_events pins + community pins + POI dots, all positioned by x/y
@@ -110,6 +110,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   const [events, setEvents] = useState([]);
   const [comms, setComms] = useState([]);
   const [pois, setPois] = useState([]);
+  const [yaps, setYaps] = useState([]);
   const [editing, setEditing] = useState(null);   // {x,y,_new} | map_event row | {_kind:'poi', ...poi row}
   const [inkMode, setInkMode] = useState(false);
   const [ink, setInk] = useState([]);             // saved map_drawings elements for this city
@@ -121,21 +122,23 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   const loadSeq = useRef(0);
   const load = useCallback(async () => {
     const my = ++loadSeq.current;   // guard: a stale load must never paint another city's pins
-    const [c, e, k, p, d] = await Promise.all([
+    const [c, e, k, p, d, y] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
       client.from("map_events").select("*").eq("city", city).order("created_at"),
       client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
       client.from("pois").select("*").eq("city", city),
       client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
+      client.from("yaps").select("*").eq("city", city),
     ]);
     if (my !== loadSeq.current) return;
-    const err = [c, e, k, p, d].find((r) => r.error);
+    const err = [c, e, k, p, d, y].find((r) => r.error);
     if (err) flash("Map load failed: " + err.error.message);
     setCfg(c.data || null);
     setInk(d.data?.elements || []);
     setEvents((e.data || []).filter(alive));
     setComms((k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at));
     setPois((p.data || []).filter((r) => r.x != null && r.y != null));
+    setYaps((y.data || []).filter(alive).filter((r) => r.x != null && r.y != null));
   }, [client, city]);
   useEffect(() => { load(); }, [load]);
 
@@ -146,6 +149,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       .on("postgres_changes", { event: "*", schema: "public", table: "map_config" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "pois" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "yaps" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "map_drawings" }, load)
       .subscribe();
     return () => { try { client.removeChannel(ch); } catch {} };
@@ -163,8 +167,8 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     setEditing({ ...frac(ev), _new: true });
   };
 
-  /* drag pins (events + communities + POIs) — save x/y on release;
-     a plain click (no movement) opens the editor for events & POIs */
+  /* drag pins (events + communities + POIs + yaps) — save x/y on release;
+     a plain click (no movement) opens the editor for events & POIs (yaps move only) */
   const startDrag = (row, table) => (ev) => {
     if (readonly) return;
     ev.stopPropagation(); ev.preventDefault();
@@ -267,11 +271,15 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
             <span class="pe">${e.venue ? VENUE_EMOJI[e.venue] : (e.emoji || "🎉")}</span>
             ${e.title && html`<span class="pl">${e.title}</span>`}
           </button>`)}
+          ${yaps.map((y) => html`<button key=${"y" + y.id} class="map-pin map-yap" title=${y.body || "yap"}
+              style=${`left:${y.x * 100}%;top:${y.y * 100}%`} onPointerDown=${startDrag(y, "yaps")}>
+            <span class="pe">💬</span>
+          </button>`)}
           ${!inkMode && html`<${InkOverlay} elements=${ink} />`}
           ${inkMode && html`<${MapInk} key=${city} client=${client} city=${city} flash=${flash} saved=${ink}
             onExit=${() => setInkMode(false)} onSaved=${(els) => setInk(els)} />`}
         </div>`}
-    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it · click a pin or dot to edit. POI dots are the small black circles.</p>`}
+    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, and 💬 yaps) · click a pin or dot to edit. POI dots are the small black circles.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
       community=${community} communities=${communities} city=${city}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
