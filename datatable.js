@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName, fetchAll } from "./ui.js?v=40";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName, fetchAll } from "./ui.js?v=41";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -8,7 +8,7 @@ import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName, 
    dates, money, and select-pickers for community, author and member
    (RLS is the real permission gate; this page is only offered to owners). */
 
-const TABS = [["communities", "Communities"], ["people", "People"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Memberships"], ["invites", "Invites"], ["bans", "Bans"]];
+const TABS = [["communities", "Communities"], ["people", "People"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Memberships"], ["facilitators", "Facilitators"], ["circles", "Circles"], ["dms", "DMs"], ["invites", "Invites"], ["bans", "Bans"]];
 
 const short = (iso) => {
   if (!iso) return "—";
@@ -59,6 +59,9 @@ const commOpts = (ctx, noneLabel) => [
 ];
 const profOpts = (ctx) => ctx.profiles.map((p) => ({ v: p.id, l: p.display_name || p.id.slice(0, 6) }));
 const commName = (ctx, id, noneLabel) => (id ? (ctx.communities.find((c) => c.id === id)?.name || "?") : noneLabel);
+const profName = (ctx, id) => (id ? (ctx.profiles.find((p) => p.id === id)?.display_name || id.slice(0, 6)) : "—");
+const profCell = (ctx, id) => { const p = ctx.profiles.find((x) => x.id === id);
+  return html`<span style="display:inline-flex;align-items:center;gap:6px">${p && html`<${Avatar} profile=${p} size="sm" />`}${p?.display_name || (id ? id.slice(0, 6) : "—")}</span>`; };
 
 const SCHEMAS = {
   communities: {
@@ -242,6 +245,102 @@ const SCHEMAS = {
       if (!res.error) api.reload();
     }}>Ban</button>`,
   },
+  // Who holds a facilitator key (staff) and whether their public listing (the
+  // app's `facilitators` table) is live. The DB keeps the two in step — a staff
+  // key spawns an inactive listing stub, dropping the key retires it — so this
+  // is one roster, not two. Pulling a key is the only write here.
+  facilitators: {
+    table: "staff",
+    newLabel: null,   // keys are granted from Dashboard → Members → Facilitators (invite flow)
+    load: (client) => client.from("facilitator_roster").select("*").order("staff_since", { ascending: false }),
+    match: (q, r) => q.eq("id", r.staff_id),
+    noDelete: true,
+    metrics: (rows) => [
+      ["keys", rows.length],
+      ["signed in", rows.filter((r) => r.profile_id).length],
+      ["listed", rows.filter((r) => r.listing_active).length],
+      ["all-community", rows.filter((r) => !r.community_id).length],
+    ],
+    cols: [
+      { key: "email", label: "Facilitator", wide: true,
+        cell: (r, ctx) => html`<span style="display:inline-flex;align-items:center;gap:8px">
+          ${r.profile_id && html`<${Avatar} profile=${{ display_name: r.display_name, avatar_url: r.avatar_url }} size="sm" />`}
+          <span><b>${r.display_name || r.email}</b>${r.display_name && html`<div class="tiny muted">${r.email}</div>`}</span></span>` },
+      { key: "community_id", label: "Community", get: (r, ctx) => commName(ctx, r.community_id, "all communities") },
+      { key: "profile_id", label: "Account", get: (r) => (r.profile_id ? "signed in" : "not yet"),
+        cell: (r) => (r.profile_id ? html`<span class="pillstat member">signed in</span>` : html`<span class="pillstat pending">never signed in</span>`) },
+      { key: "listing_active", label: "Public listing", get: (r) => (r.listing_active ? "live" : r.has_listing ? "draft" : "none"),
+        cell: (r) => r.listing_active ? html`<span class="pillstat facilitator">live</span>`
+          : r.community_id ? html`<span class="pillstat">${r.has_listing ? "draft — they fill it in from the app" : "none"}</span>`
+          : html`<span class="muted tiny">n/a (all-community key)</span>` },
+      { key: "headline", label: "Headline", get: (r) => r.headline || "—" },
+      { key: "staff_since", label: "Key since", type: "dt" },
+    ],
+    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
+      if (!confirm(`Remove ${r.display_name || r.email}'s facilitator key${r.community_id ? "" : " (all communities)"}? Their public listing is retired with it.`)) return;
+      const { error } = await api.client.from("staff").delete().eq("id", r.staff_id);
+      api.flash(error?.message || "Key removed");
+      if (!error) api.reload();
+    }}>Remove key</button>`,
+  },
+
+  // Circles = the app's friend graph. Read-only: for support ("why can't I
+  // see X") and abuse cases ("who is this person connected to").
+  circles: {
+    table: "connections",
+    newLabel: null,
+    load: (client) => fetchAll((from, to) => client.from("connections").select("*").order("created_at", { ascending: false }).range(from, to)),
+    match: (q, r) => q.eq("a", r.a).eq("b", r.b),
+    noDelete: true,
+    metrics: (rows) => [
+      ["connections", rows.filter((r) => r.status === "accepted").length],
+      ["pending", rows.filter((r) => r.status === "pending").length],
+      ["people connected", new Set(rows.filter((r) => r.status === "accepted").flatMap((r) => [r.a, r.b])).size],
+      ["this month", rows.filter((r) => r.created_at > new Date(Date.now() - 30 * 864e5).toISOString()).length],
+    ],
+    cols: [
+      { key: "a", label: "Person", wide: true, get: (r, ctx) => profName(ctx, r.a), cell: (r, ctx) => profCell(ctx, r.a) },
+      { key: "b", label: "Connected to", wide: true, get: (r, ctx) => profName(ctx, r.b), cell: (r, ctx) => profCell(ctx, r.b) },
+      { key: "requested_by", label: "Asked by", get: (r, ctx) => (r.requested_by === r.a ? "←" : r.requested_by === r.b ? "→" : "?") + " " + profName(ctx, r.requested_by) },
+      { key: "status", label: "Status", get: (r) => r.status,
+        cell: (r) => html`<span class=${"pillstat " + (r.status === "accepted" ? "member" : r.status === "pending" ? "pending" : "danger")}>${r.status || "—"}</span>` },
+      { key: "created_at", label: "Since", type: "dt" },
+    ],
+  },
+
+  // DM threads (one per announcement reply). Bodies are NOT shown here — that
+  // is Moderation's job, where each message can be hidden or removed; this is
+  // the thread-level index for support: who talked to whom, about what, when.
+  dms: {
+    table: "dm_threads",
+    newLabel: null,
+    load: (client) => client.from("dm_threads")
+      .select("*, announcement:announcements(body,community_id), messages:dm_messages(count)")
+      .order("created_at", { ascending: false }).limit(1000)
+      .then((res) => ({ ...res, data: (res.data || []).map((r) => ({ ...r,
+        community_id: r.announcement?.community_id ?? null, msg_count: r.messages?.[0]?.count ?? 0 })) })),
+    match: (q, r) => q.eq("id", r.id),
+    noDelete: true,
+    metrics: (rows) => [
+      ["threads", rows.length],
+      ["open", rows.filter((r) => r.status !== "closed").length],
+      ["messages", rows.reduce((a, r) => a + (r.msg_count || 0), 0)],
+      ["this week", rows.filter((r) => r.created_at > new Date(Date.now() - 7 * 864e5).toISOString()).length],
+    ],
+    cols: [
+      { key: "starter_id", label: "Started by", get: (r, ctx) => profName(ctx, r.starter_id), cell: (r, ctx) => profCell(ctx, r.starter_id) },
+      { key: "owner_id", label: "With", get: (r, ctx) => profName(ctx, r.owner_id), cell: (r, ctx) => profCell(ctx, r.owner_id) },
+      { key: "announcement_id", label: "About", wide: true, get: (r) => r.announcement?.body || "—",
+        cell: (r) => html`<span class="muted">${(r.announcement?.body || "—").slice(0, 90)}</span>` },
+      { key: "community_id", label: "Community", get: (r, ctx) => commName(ctx, r.community_id, "—") },
+      { key: "msg_count", label: "Msgs" },
+      { key: "status", label: "Status", get: (r) => r.status || "open",
+        cell: (r) => html`<span class=${"pillstat " + (r.status === "closed" ? "" : "member")}>${r.status || "open"}${r.closed_at ? html` <span class="tiny muted">${shortDT(r.closed_at)}</span>` : ""}</span>` },
+      { key: "created_at", label: "Started", type: "dt" },
+    ],
+    rowAction: (r) => html`<button class="btn small ghost" onClick=${() => { location.hash = "/mod?kind=dm_messages&q=" + r.id; }}>Messages</button>`,
+  },
+
   invites: {
     table: "invites",
     newLabel: null,   // invites are sent from the member/facilitator modals
@@ -624,7 +723,9 @@ export function DataPage({ client, communities, session, flash, sub }) {
       ${rows === null && html`<div class="empty" style="border:0">Loading…</div>`}
       ${rows !== null && filtered.length === 0 && html`<div class="empty" style="border:0">No rows${q || comm ? " match" : ""}.</div>`}
     </div>
-    <p class="tiny muted" style="margin-top:8px">${filtered.length} row${filtered.length === 1 ? "" : "s"} · every cell is editable — click one; changes go live in the app instantly.</p>
+    <p class="tiny muted" style="margin-top:8px">${filtered.length} row${filtered.length === 1 ? "" : "s"}${S.cols.some((c) => c.edit)
+      ? " · every cell is editable — click one; changes go live in the app instantly."
+      : " · read-only view" + (tab === "dms" ? " — message bodies live in Moderation, where they can be hidden or removed." : ".")}</p>
 
     ${adding && (tab === "communities"
       ? html`<${AddCommunityModal} client=${client} ctx=${ctx} flash=${flash} onClose=${() => setAdding(false)} />`

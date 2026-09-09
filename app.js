@@ -1,16 +1,16 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar } from "./ui.js?v=40";
-import { Dashboard } from "./dashboard.js?v=40";
-import { SharedMap } from "./sharedmap.js?v=40";
-import { Overview } from "./overview.js?v=40";
-import { DataPage } from "./datatable.js?v=40";
-import { CRMPage } from "./crm.js?v=40";
-import { IssuesPage } from "./issues.js?v=40";
-import { UpNextPage } from "./upnext.js?v=40";
-import { AdsPage } from "./ads.js?v=40";
-import { ModerationPage } from "./moderation.js?v=40";
+import { html, Avatar } from "./ui.js?v=41";
+import { Dashboard } from "./dashboard.js?v=41";
+import { SharedMap } from "./sharedmap.js?v=41";
+import { Overview } from "./overview.js?v=41";
+import { DataPage } from "./datatable.js?v=41";
+import { CRMPage } from "./crm.js?v=41";
+import { IssuesPage } from "./issues.js?v=41";
+import { UpNextPage } from "./upnext.js?v=41";
+import { AdsPage } from "./ads.js?v=41";
+import { ModerationPage } from "./moderation.js?v=41";
 import { CanvasPage } from "./canvasflow.js?v=42";
 
 /* Collide Admin — desktop console for owners & facilitators.
@@ -66,12 +66,12 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    facilitator sections live as tabs inside Dashboard. */
 const PAGES = ["overview", "dashboard", "map", "upnext", "canvas", "data", "crm", "mod", "ads", "issues"];
 const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", mod: "Moderation", canvas: "UX Onboarding", ads: "Ads", issues: "Issues", upnext: "Up Next" };
-const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
-const DATA_SUBS = ["communities", "people", "announcements", "events", "members", "invites", "bans"];
+const DASH_SUBS = ["announcements", "events", "members", "money", "meals", "settings", "partnerships"];
+const DATA_SUBS = ["communities", "people", "announcements", "events", "members", "facilitators", "circles", "dms", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
 
 const routeNow = () => {
-  const parts = (location.hash || "").replace(/^#\/?/, "").split("/");
+  const parts = (location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/");   // `?k=v` after the path is page-local (e.g. Moderation deep links)
   let p = parts[0] || "", sub = parts[1] || "";
   if (DASH_SUBS.includes(p)) { sub = p; p = "dashboard"; }   // legacy top-level links
   if (!PAGES.includes(p)) return { page: "overview", sub: "" };

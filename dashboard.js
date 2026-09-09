@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=40";
-import { EventsPage } from "./events.js?v=40";
-import { AnnouncementsPage } from "./announcements.js?v=40";
-import { MembersPage } from "./members.js?v=40";
-import { MoneyPage } from "./money.js?v=40";
-import { SettingsPage } from "./settings.js?v=40";
-import { PartnershipsPage } from "./partnerships.js?v=40";
+import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=41";
+import { EventsPage } from "./events.js?v=41";
+import { AnnouncementsPage } from "./announcements.js?v=41";
+import { MembersPage } from "./members.js?v=41";
+import { MoneyPage } from "./money.js?v=41";
+import { MealsPage } from "./meals.js?v=41";
+import { SettingsPage } from "./settings.js?v=41";
+import { PartnershipsPage } from "./partnerships.js?v=41";
 
 /* The facilitator view, whole: the LIVE app (phone-sized, signed in as you)
    on the left, and every facilitator section as a tab on the right — all of
@@ -21,6 +22,7 @@ const TABS = [
   ["events", "Events"],
   ["members", "Members"],
   ["money", "Money"],
+  ["meals", "Meals"],
   ["settings", "Settings"],
   ["partnerships", "Partnerships"],
 ];
@@ -69,6 +71,7 @@ export function Dashboard(props) {
         : tab === "events" ? html`<${EventsPage} key=${community.id} ...${props} />`
         : tab === "members" ? html`<${MembersPage} key=${community.id} ...${props} />`
         : tab === "money" ? html`<${MoneyPage} key=${community.id} ...${props} />`
+        : tab === "meals" ? html`<${MealsPage} key=${community.id} ...${props} />`
         : tab === "settings" ? html`<${SettingsPage} key=${community.id} ...${props} />`
         : html`<${PartnershipsPage} key=${community.id} ...${props} />`}
     </div>
