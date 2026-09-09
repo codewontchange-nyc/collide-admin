@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, moneyExact } from "./ui.js?v=41";
+import { html, Avatar, moneyExact } from "./ui.js?v=43";
 
 /* Meals ("Homeplate") — this community's cooks, the meals they've posted, and
    the claims against them. Staff can close an open meal; everything else is
@@ -15,7 +15,10 @@ export function MealsPage({ client, community, flash }) {
 
   const load = useCallback(async () => {
     const [m, c] = await Promise.all([
-      client.from("meals").select("*").eq("community_id", community.id).order("pickup_start", { ascending: false }).limit(300),
+      // explicit columns: the exact pickup address/coords are column-gated to the cook + claimants,
+      // so `*` would be denied outright — the neighbourhood-level `pickup_area` is what staff get
+      client.from("meals").select("id,community_id,cook_id,title,photos,ingredients,allergens,cuisines,price_cents,portions,pay_method,pay_handle,pickup_area,pickup_start,pickup_end,status,city,created_at")
+        .eq("community_id", community.id).order("pickup_start", { ascending: false }).limit(300),
       client.from("meal_cooks").select("*").eq("community_id", community.id),
     ]);
     const err = [m, c].find((r) => r.error);
