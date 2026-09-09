@@ -274,7 +274,7 @@ export function CanvasPage({ client, session, flash }) {
 
   return html`<div class="cv-page">
     <div class="cv-topbar">
-      <h2>Canvas <span class="muted" style="font:400 13px var(--body)">onboarding flows — click text to edit · drag screens · scroll to zoom</span></h2>
+      <h2>UX Onboarding <span class="muted" style="font:400 13px var(--body)">onboarding flows — click text to edit · drag screens · scroll to zoom</span></h2>
       <div class="cv-tools">
         ${Object.keys(FLOW_COLORS).map((f) => html`<button key=${f} class="btn small ghost" onClick=${addScreen(f)} title=${"Add a screen to " + f}
           style=${`border-color:${FLOW_COLORS[f]};color:${FLOW_COLORS[f]}`}>+ ${f.split(" ")[0]}</button>`)}

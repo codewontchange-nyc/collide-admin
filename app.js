@@ -11,7 +11,7 @@ import { IssuesPage } from "./issues.js?v=40";
 import { UpNextPage } from "./upnext.js?v=40";
 import { AdsPage } from "./ads.js?v=40";
 import { ModerationPage } from "./moderation.js?v=40";
-import { CanvasPage } from "./canvasflow.js?v=41";
+import { CanvasPage } from "./canvasflow.js?v=42";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -65,7 +65,7 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
 const PAGES = ["overview", "dashboard", "map", "upnext", "canvas", "data", "crm", "mod", "ads", "issues"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", mod: "Moderation", canvas: "Canvas", ads: "Ads", issues: "Issues", upnext: "Up Next" };
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", data: "Data", crm: "CRM", mod: "Moderation", canvas: "UX Onboarding", ads: "Ads", issues: "Issues", upnext: "Up Next" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "settings", "partnerships"];
 const DATA_SUBS = ["communities", "people", "announcements", "events", "members", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
