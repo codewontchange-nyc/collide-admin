@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, CITIES, cityName } from "./ui.js?v=38";
+import { html, Avatar, mediaUrl, CITIES, cityName } from "./ui.js?v=39";
 
 /* Moderation — every piece of member content across every city in one feed:
    what was uploaded where, when, and by who. Hide pulls content from all
@@ -90,7 +90,7 @@ export function ModerationPage({ client, communities, flash }) {
   const shown = useMemo(() => {
     let out = items || [];
     if (kind !== "all") out = out.filter((r) => r.tbl === kind);
-    if (city !== "all") out = out.filter((r) => r.city === city || (!r.city && city === "all"));
+    if (city !== "all") out = out.filter((r) => r.city === city);
     if (status === "hidden") out = out.filter((r) => r.hidden);
     if (status === "visible") out = out.filter((r) => !r.hidden);
     if (mediaOnly) out = out.filter((r) => r.image || r.audio);

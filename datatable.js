@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName } from "./ui.js?v=38";
+import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName, fetchAll } from "./ui.js?v=39";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -173,9 +173,9 @@ const SCHEMAS = {
     // counting anyone who's in several communities.
     table: "profiles",
     newLabel: null,   // people arrive via invites, not row creation
-    load: (client) => client.from("profiles")
+    load: (client) => fetchAll((from, to) => client.from("profiles")
       .select("*, memberships:community_members(community_id,status)")
-      .order("created_at", { ascending: false }).limit(2000),
+      .order("created_at", { ascending: false }).range(from, to)),
     match: (q, r) => q.eq("id", r.id),
     metrics: (rows) => [
       ["people", rows.length],
@@ -213,9 +213,9 @@ const SCHEMAS = {
     table: "community_members",
     newLabel: "+ Add member",
     modalCreate: true,   // composite key — pick person & community first
-    load: (client) => client.from("community_members")
+    load: (client) => fetchAll((from, to) => client.from("community_members")
       .select("*, profile:profiles!community_members_profile_id_fkey(id,display_name,avatar_url)")
-      .order("joined_at", { ascending: false }).limit(2000),
+      .order("joined_at", { ascending: false }).range(from, to)),
     match: (q, r) => q.eq("community_id", r.community_id).eq("profile_id", r.profile_id),
     metrics: (rows) => [
       ["people", new Set(rows.map((r) => r.profile_id)).size],   // unique — one person can hold several memberships
@@ -410,7 +410,8 @@ function AddCommunityModal({ client, ctx, flash, onClose }) {
     }).select().single();
     if (error) { setBusy(false); flash(error.message); return; }
     // put the creator in the roster too
-    await client.from("community_members").insert({ community_id: data.id, profile_id: ctx.session.user.id, status: "member" }).then(() => {});
+    const { error: memErr } = await client.from("community_members").insert({ community_id: data.id, profile_id: ctx.session.user.id, status: "member" });
+    if (memErr) { setBusy(false); flash("Community created, but adding you as a member failed: " + memErr.message); return; }
     flash("Community created 🎉");
     setTimeout(() => location.reload(), 600);   // refresh pickers everywhere
   };

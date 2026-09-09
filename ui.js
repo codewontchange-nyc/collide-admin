@@ -31,6 +31,24 @@ export const todayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+/* ---------- data ---------- */
+// Page through a table so metrics/totals aren't silently capped at PostgREST's
+// default 1000-row ceiling. `page(from, to)` returns a range-bound query builder.
+// Returns the same { data, error } shape a single query would.
+export async function fetchAll(page) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + 999);
+    if (error) return { data: rows, error };
+    if (!data || !data.length) break;
+    rows.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return { data: rows, error: null };
+}
+
 /* ---------- avatars ---------- */
 const HUES = ["#e85d75", "#219a8f", "#b9852e", "#6b4fbb", "#3a7bd5", "#588c3f"];
 export function Avatar({ profile, size = "" }) {

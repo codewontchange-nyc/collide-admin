@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=38";
+import { html } from "./ui.js?v=39";
 
 /* Canvas — a Figma-style flow editor for the onboarding journeys.
    Mini phone screens laid left→right per flow with connectors, on a
@@ -85,8 +85,8 @@ export function CanvasPage({ client, session, flash }) {
   const redo = useCallback(() => { if (!redoStack.current.length || document.activeElement?.isContentEditable) return; undoStack.current.push(JSON.stringify(docRef.current)); setDoc(JSON.parse(redoStack.current.pop())); setDirty(true); }, []);
 
   useEffect(() => {
-    client.from("canvas_docs").select("doc").eq("id", "onboarding").single()
-      .then(({ data, error }) => { if (error) flash(error.message); else setDoc(data.doc); });
+    client.from("canvas_docs").select("doc").eq("id", "onboarding").maybeSingle()
+      .then(({ data, error }) => { if (error) flash(error.message); setDoc(data?.doc || { screens: [] }); });
     client.from("onboarding_copy").select("key,text")
       .then(({ data }) => { const m = Object.fromEntries((data || []).map((r) => [r.key, r.text])); copyRef.current = m; setCopy(m); });
   }, [client]);

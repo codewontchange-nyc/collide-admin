@@ -1,5 +1,5 @@
 import { useState } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, CITIES } from "./ui.js?v=38";
+import { html, Modal, CITIES } from "./ui.js?v=39";
 
 export function SettingsPage({ client, community, isOwner, session, flash }) {
   const [f, setF] = useState({
@@ -58,7 +58,8 @@ function CreateModal({ client, session, flash, onClose }) {
       .insert({ name: name.trim(), owner_id: session.user.id }).select().single();
     if (error) { flash(error.message); return; }
     // put the creator in the roster too
-    await client.from("community_members").insert({ community_id: data.id, profile_id: session.user.id, status: "member" }).then(() => {});
+    const { error: memErr } = await client.from("community_members").insert({ community_id: data.id, profile_id: session.user.id, status: "member" });
+    if (memErr) { flash("Community made, but adding you as a member failed: " + memErr.message); return; }
     localStorage.setItem("ca.comm", data.id);
     flash("Community created 🎉");
     location.reload();

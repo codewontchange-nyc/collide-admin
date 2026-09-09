@@ -1,17 +1,17 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar } from "./ui.js?v=38";
-import { Dashboard } from "./dashboard.js?v=38";
-import { SharedMap } from "./sharedmap.js?v=38";
-import { Overview } from "./overview.js?v=38";
-import { DataPage } from "./datatable.js?v=38";
-import { CRMPage } from "./crm.js?v=38";
-import { IssuesPage } from "./issues.js?v=38";
-import { UpNextPage } from "./upnext.js?v=38";
-import { AdsPage } from "./ads.js?v=38";
-import { ModerationPage } from "./moderation.js?v=38";
-import { CanvasPage } from "./canvasflow.js?v=38";
+import { html, Avatar } from "./ui.js?v=39";
+import { Dashboard } from "./dashboard.js?v=39";
+import { SharedMap } from "./sharedmap.js?v=39";
+import { Overview } from "./overview.js?v=39";
+import { DataPage } from "./datatable.js?v=39";
+import { CRMPage } from "./crm.js?v=39";
+import { IssuesPage } from "./issues.js?v=39";
+import { UpNextPage } from "./upnext.js?v=39";
+import { AdsPage } from "./ads.js?v=39";
+import { ModerationPage } from "./moderation.js?v=39";
+import { CanvasPage } from "./canvasflow.js?v=39";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -102,7 +102,7 @@ function PushBell({ session, flash }) {
       const reg = await navigator.serviceWorker.ready;
       if (state === "on") {
         const sub = await reg.pushManager.getSubscription();
-        if (sub) { await client.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
+        if (sub) { await client.from("push_subs").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
         setState("off"); flash("Push notifications off");
         return;
       }
@@ -111,9 +111,9 @@ function PushBell({ session, flash }) {
       if (perm !== "granted") { setState("off"); flash("Notifications blocked by the browser"); return; }
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC) });
       const j = sub.toJSON();
-      const { error } = await client.from("push_subscriptions").upsert({
+      const { error } = await client.from("push_subs").upsert({
         profile_id: session.user.id, endpoint: sub.endpoint,
-        p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent,
+        p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent,
       }, { onConflict: "endpoint" });
       if (error) throw error;
       setState("on"); flash("Push on — announcements will reach this device 🔔");

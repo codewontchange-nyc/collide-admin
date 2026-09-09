@@ -1,5 +1,5 @@
 import { useState, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, money, niceDate, todayStr, cityName } from "./ui.js?v=38";
+import { html, money, niceDate, todayStr, cityName, fetchAll } from "./ui.js?v=39";
 
 /* Platform KPI strip — owner-only tiles above the community grid.
    Numbers come from the platform_kpis() RPC (server-side, auth-aware);
@@ -51,9 +51,14 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
     let live = true;
     (async () => {
       const [m, e, inv, k, errs] = await Promise.all([
-        client.from("community_members").select("community_id, profile_id, status, joined_at"),
+        // page past the 1000-row cap so platform totals are accurate
+        fetchAll((from, to) => client.from("community_members")
+          .select("community_id, profile_id, status, joined_at").range(from, to)),
+        // only upcoming/undated events (server-side) — ordering asc then slicing
+        // the first 500 used to return the OLDEST rows and drop the upcoming ones.
         client.from("activities").select("id, community_id, title, date, at_time, place, location, when_bucket, expires_at")
-          .not("community_id", "is", null).order("date", { ascending: true, nullsFirst: false }).limit(500),
+          .not("community_id", "is", null).or(`date.gte.${todayStr()},date.is.null`)
+          .order("date", { ascending: true, nullsFirst: false }).limit(500),
         client.from("invites").select("*", { count: "exact", head: true }).is("accepted_at", null),
         client.rpc("platform_kpis"),
         client.from("client_errors").select("*", { count: "exact", head: true })
@@ -88,7 +93,8 @@ export function Overview({ client, communities, isOwner, flash, go, pickComm }) 
   });
 
   const totals = {
-    members: stats.reduce((a, s) => a + s.count, 0),
+    // dedupe across communities — a person in N communities is one member
+    members: new Set((members || []).filter((m) => m.status !== "pending").map((m) => m.profile_id)).size,
     thisWeek: stats.reduce((a, s) => a + s.thisWeek, 0),
     events: stats.reduce((a, s) => a + s.evs.length, 0),
     pending: stats.reduce((a, s) => a + s.pending, 0),

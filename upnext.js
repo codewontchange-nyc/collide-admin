@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=38";
+import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=39";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;
@@ -11,7 +11,7 @@ import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v
    ## heading, **bold**, *italic*, > quote); storyHtml() renders it and
    domToStory() reads the editor back into it, so console and app agree. */
 
-const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 export const storyHtml = (body) => esc(body || "").split(/\n{2,}/).map((b) => {
   b = b.trim();
   if (!b) return "";
