@@ -116,8 +116,13 @@ Deno.serve(async (req) => {
     const skip = (k: string) => { skipped[k] = (skipped[k] || 0) + 1; };
 
     for (const u of funnel.data || []) {
-      if (u.stage >= 4) continue;                                     // graduated 🎓
+      if (u.yapped_at) continue;                                      // graduated 🎓 (posted a yap)
       if (u.crm_opt_out) { skip("opt_out"); continue; }
+      // The funnel `stage` is a high-water mark, so someone can reach stage 3
+      // (circled) without ever joining a plan (stage 2). Target the EARLIEST
+      // activation they're still missing — plan → circle → yap — so a skipped
+      // step still gets nudged instead of silently bypassed.
+      const needStage = !u.joined_at ? 1 : !u.circled_at ? 2 : 3;
       const email = emailById.get(u.id) || "";
       const daysIn = Math.floor((now - new Date(u.stage_entered_at).getTime()) / 864e5);
       const last = lastTouch.get(u.id) || 0;
@@ -139,10 +144,11 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // ---- stages 1–3: product drips (staff excluded) ----
+      // ---- stages 1–3: product drips (staff excluded), keyed to the earliest
+      //      missing activation rather than the max-based funnel stage ----
       if (staffEmails.has(email)) { skip("staff"); continue; }
       const due = (campaigns.data || []).filter((c) =>
-        c.stage === u.stage && c.day_offset <= daysIn && !touched.has(`${u.id}:${c.id}`));
+        c.stage === needStage && c.day_offset <= daysIn && !touched.has(`${u.id}:${c.id}`));
       if (!due.length) { skip("nothing_due"); continue; }
       if (now - last < MIN_GAP_H * 36e5) { skip("too_soon"); continue; }
       const hr = localHour(u.city);
@@ -159,7 +165,8 @@ Deno.serve(async (req) => {
 
     if (dry) {
       return json({ ok: true, dry: true, planned: planned.map((p) => ({
-        profile: p.u.display_name || p.email, stage: p.u.stage, step: p.c.step,
+        profile: p.u.display_name || p.email, funnelStage: p.u.stage,
+        targetStage: p.kind === "reminder" ? 0 : p.c.stage, step: p.c.step,
         channel: p.kind === "reminder" ? "invite-reminder" : p.c.channel,
         title: p.title, body: p.body })), skipped });
     }
