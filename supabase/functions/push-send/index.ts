@@ -1,14 +1,17 @@
-// push-send — web-push broadcast.
+// push-send — web-push fan-out. Subscriptions live in push_subs.
 //
-// POST { title, body, url?, community_id? }
-//   community_id set  → push to that community's members' subscriptions
-//   community_id null → push to every subscription (Collide-wide)
+// POST { title, body, url?, profile_ids?, community_id? }
+//   profile_ids set   → push to exactly those users (targeted; notify_push)
+//   community_id set   → push to that community's members (push_on_announcement)
+//   neither set        → broadcast to every subscription (staff-initiated)
 //
-// Callers: the announcements DB trigger (x-push-secret header) or signed-in
-// staff (Authorization JWT). Dead subscriptions (404/410) are pruned.
+// Callers: the announcements DB trigger and notify_push (each with its own
+// x-push-secret), or signed-in staff (Authorization JWT). Dead subscriptions
+// (404/410) are pruned. Both DB secrets are accepted so the one deployed
+// function serves both the broadcast and targeted contracts.
 //
 // Deployed with: supabase functions deploy push-send --no-verify-jwt --project-ref pjxvvwcnjjizdtiutpxd
-// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, PUSH_WEBHOOK_SECRET
+// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, PUSH_WEBHOOK_SECRET, PUSH_SECRET
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -32,8 +35,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
-    // auth: webhook secret (DB trigger) or staff JWT (console)
-    const secretOk = req.headers.get("x-push-secret") === Deno.env.get("PUSH_WEBHOOK_SECRET");
+    // auth: either DB webhook secret (announcement broadcast OR notify_push
+    // targeted) or a staff JWT (console)
+    const hdrSecret = req.headers.get("x-push-secret");
+    const secretOk = !!hdrSecret &&
+      (hdrSecret === Deno.env.get("PUSH_WEBHOOK_SECRET") || hdrSecret === Deno.env.get("PUSH_SECRET"));
     if (!secretOk) {
       const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
       const { data: { user } } = await admin.auth.getUser(jwt);
@@ -43,20 +49,27 @@ Deno.serve(async (req) => {
         return json({ error: "Staff only" }, 403);
     }
 
-    const { title, body, url, community_id = null } = await req.json();
+    const { title, body, url, community_id = null, profile_ids = null } = await req.json();
     if (!title || !body) return json({ error: "title and body required" }, 400);
 
-    let subs: { id: string; endpoint: string; p256dh: string; auth: string }[] = [];
-    if (community_id) {
+    let subs: { endpoint: string; p256dh: string; auth: string }[] = [];
+    if (Array.isArray(profile_ids)) {
+      // targeted (notify_push): exactly these users, never a broadcast fallback
+      const ids = profile_ids.filter(Boolean);
+      if (ids.length) {
+        const { data } = await admin.from("push_subs").select("*").in("profile_id", ids);
+        subs = data || [];
+      }
+    } else if (community_id) {
       const { data: members } = await admin.from("community_members")
         .select("profile_id").eq("community_id", community_id).neq("status", "pending");
       const ids = (members || []).map((m) => m.profile_id);
       if (ids.length) {
-        const { data } = await admin.from("push_subscriptions").select("*").in("profile_id", ids);
+        const { data } = await admin.from("push_subs").select("*").in("profile_id", ids);
         subs = data || [];
       }
     } else {
-      const { data } = await admin.from("push_subscriptions").select("*");
+      const { data } = await admin.from("push_subs").select("*");
       subs = data || [];
     }
 
@@ -68,12 +81,13 @@ Deno.serve(async (req) => {
         sent++;
       } catch (e) {
         const code = (e as { statusCode?: number })?.statusCode;
-        if (code === 404 || code === 410) { await admin.from("push_subscriptions").delete().eq("id", s.id); pruned++; }
+        if (code === 404 || code === 410) { await admin.from("push_subs").delete().eq("endpoint", s.endpoint); pruned++; }
         else failed++;
       }
     }));
     return json({ ok: true, audience: subs.length, sent, pruned, failed });
   } catch (e) {
-    return json({ error: String((e as Error)?.message || e) }, 500);
+    console.error("push-send error:", e);
+    return json({ error: "internal" }, 500);
   }
 });

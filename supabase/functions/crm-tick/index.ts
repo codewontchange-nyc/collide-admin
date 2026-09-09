@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
       admin.from("staff").select("email"),
       admin.from("crm_campaigns").select("*").eq("enabled", true).order("stage").order("step"),
       admin.from("crm_touches").select("profile_id, campaign_id, sent_at"),
-      admin.from("push_subscriptions").select("*"),
+      admin.from("push_subs").select("*"),
       admin.from("community_members").select("profile_id, community_id, joined_at").neq("status", "pending"),
       admin.from("communities").select("id, name, archived_at"),
       admin.from("activities").select("title, date, city").gte("date", new Date().toISOString().slice(0, 10))
@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
             sent++;
           } catch (e) {
             const code = (e as { statusCode?: number })?.statusCode;
-            if (code === 404 || code === 410) await admin.from("push_subscriptions").delete().eq("id", s.id);
+            if (code === 404 || code === 410) await admin.from("push_subs").delete().eq("endpoint", s.endpoint);
           }
         }
         pushed += sent;

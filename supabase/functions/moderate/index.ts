@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
       }, { onConflict: "email" });
       await admin.from("community_members").delete().eq("profile_id", uid);
       await admin.from("staff").delete().eq("email", em).neq("role", "owner");
-      await admin.from("push_subscriptions").delete().eq("profile_id", uid);
+      await admin.from("push_subs").delete().eq("profile_id", uid);
       return json({ ok: true, banned: em });
     }
 
