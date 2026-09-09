@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from "https://esm.sh/d3-force@3.0.0";
-import { html, fetchAll, cityName } from "./ui.js?v=44";
+import { html, fetchAll, cityName } from "./ui.js?v=45";
 
 /* Network — the platform as a living social graph. Communities are squares,
    people are their profile pictures, and three kinds of ties run between them:
@@ -184,13 +184,17 @@ export function NetworkPage({ client, flash }) {
         .strength((l) => (l.kind === "m" ? 0.55 : l.kind === "x" ? (l.pending ? 0.05 : 0.25) : 0.02)))
       .force("charge", forceManyBody().strength((n) => (n.kind === "c" ? -1500 : -140)).distanceMax(800))
       .force("collide", forceCollide().radius((n) => (n.kind === "c" ? n.size * 0.85 + 14 : n.r + 6)).iterations(2))
-      .force("x", forceX((n) => (layersRef.current.cityPull ? (CITY_X[n.city] || 0) * W : 0)).strength((n) => (n.kind === "c" ? 0.12 : 0.05)))
-      .force("y", forceY(0).strength(0.05))
-      .alphaDecay(0.02).velocityDecay(0.35);
+      // people with no ties yet get a firmer pull to the middle so they don't drift off-stage
+      .force("x", forceX((n) => (layersRef.current.cityPull ? (CITY_X[n.city] || 0) * W * (n.kind === "c" || n.comms.length || n.deg ? 1 : 0.55) : 0)).strength((n) => (n.kind === "c" ? 0.12 : n.comms.length || n.deg ? 0.07 : 0.16)))
+      .force("y", forceY(0).strength((n) => (n.kind === "c" || n.comms.length || n.deg ? 0.07 : 0.16)))
+      .alphaDecay(0.02).velocityDecay(0.5);
+    // settle the layout up front (synchronously) so the first frame is already the picture,
+    // then let it breathe at low energy instead of wandering into place on screen
+    s.stop().tick(320); s.alpha(0.25).restart();
     sim.current = s;
     view.current = { k: Math.min(1, Math.min(W, H) / 900), tx: W / 2, ty: H / 2 };
     // frame the graph once the layout has mostly settled (and again when it ends)
-    const ids = [1500, 3500].map((d) => setTimeout(() => fitRef.current?.(), d));
+    const ids = [60, 1500, 4000].map((d) => setTimeout(() => fitRef.current?.(), d));
     s.on("end", () => fitRef.current?.());
     return () => { ids.forEach(clearTimeout); s.stop(); };
   }, [g]);
@@ -237,6 +241,7 @@ export function NetworkPage({ client, flash }) {
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
 
+      for (const n of g.nodes) { if (n.dx === undefined) { n.dx = n.x; n.dy = n.y; } else { n.dx += (n.x - n.dx) * 0.22; n.dy += (n.y - n.dy) * 0.22; } }
       const visN = (n) => n.t0 <= T, visL = (l) => l.t0 <= T && visN(l.source) && visN(l.target);
       const nb = new Set(); if (F) { nb.add(F.id); g.links.forEach((l) => { if (!visL(l) || l.kind === "e") return; if (l.source === F) nb.add(l.target.id); if (l.target === F) nb.add(l.source.id); }); }
       const dim = (n) => (F && !nb.has(n.id));
@@ -254,29 +259,29 @@ export function NetworkPage({ client, flash }) {
         if (l.kind === "m") { ctx.strokeStyle = cb === "city" ? colorOf(l.target) : l.color; ctx.lineWidth = 1.3; ctx.globalAlpha *= 0.42; ctx.setLineDash([]); }
         else if (l.kind === "x") { ctx.strokeStyle = "#f6ecdf"; ctx.lineWidth = l.pending ? 1 : 1.6; ctx.globalAlpha *= l.pending ? 0.28 : 0.62; ctx.setLineDash(l.pending ? [4, 5] : []); }
         else { ctx.strokeStyle = "#f0a830"; ctx.lineWidth = 0.7 + l.w * 0.6; ctx.globalAlpha *= 0.16; ctx.setLineDash([]); }
-        ctx.beginPath(); ctx.moveTo(l.source.x, l.source.y); ctx.lineTo(l.target.x, l.target.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(l.source.dx, l.source.dy); ctx.lineTo(l.target.dx, l.target.dy); ctx.stroke();
       }
       ctx.setLineDash([]);
 
       // communities: squares
       for (const n of g.nodes) {
         if (n.kind !== "c" || !visN(n)) continue;
-        const sc = scaleOf(n), s = n.size * sc, x = n.x - s / 2, y = n.y - s / 2, col = colorOf(n);
+        const sc = scaleOf(n), s = n.size * sc, x = n.dx - s / 2, y = n.dy - s / 2, col = colorOf(n);
         ctx.globalAlpha = dim(n) ? 0.16 : 1;
         ctx.shadowColor = col; ctx.shadowBlur = F === n ? 44 : 22;
         ctx.fillStyle = col; rr(x, y, s, s, s * 0.22); ctx.fill();
         ctx.shadowBlur = 0;
         ctx.fillStyle = "rgba(255,255,255,.14)"; rr(x + 2, y + 2, s - 4, s * 0.42, s * 0.18); ctx.fill();
         ctx.font = `${Math.round(s * 0.46)}px system-ui, "Apple Color Emoji", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillStyle = "#fff"; ctx.fillText(n.emoji, n.x, n.y + s * 0.02);
+        ctx.fillStyle = "#fff"; ctx.fillText(n.emoji, n.dx, n.dy + s * 0.02);
         if (Ly.labels || F === n || nb.has(n.id)) {
           ctx.font = `600 ${13 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.textBaseline = "top";
           ctx.lineWidth = 4 / Math.sqrt(k); ctx.strokeStyle = "rgba(21,15,12,.85)"; ctx.lineJoin = "round";
-          const label = n.name, my = n.y + s / 2 + 7;
-          ctx.strokeText(label, n.x, my); ctx.fillStyle = "#fbf6f0"; ctx.fillText(label, n.x, my);
+          const label = n.name, my = n.dy + s / 2 + 7;
+          ctx.strokeText(label, n.dx, my); ctx.fillStyle = "#fbf6f0"; ctx.fillText(label, n.dx, my);
           ctx.font = `500 ${11 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.fillStyle = "rgba(251,246,240,.62)";
           const mc = g.links.filter((l) => l.kind === "m" && l.target === n && visL(l)).length;
-          ctx.strokeText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.x, my + 16 / Math.sqrt(k)); ctx.fillText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.x, my + 16 / Math.sqrt(k));
+          ctx.strokeText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.dx, my + 16 / Math.sqrt(k)); ctx.fillText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.dx, my + 16 / Math.sqrt(k));
         }
       }
       // people: profile pictures
@@ -286,17 +291,17 @@ export function NetworkPage({ client, flash }) {
         const sc = scaleOf(n), r = n.r * sc, col = colorOf(n), hi = F === n || hoverRef.current?.node === n;
         ctx.globalAlpha = dim(n) ? 0.14 : 1;
         if (hi) { ctx.shadowColor = col; ctx.shadowBlur = 26; }
-        ctx.beginPath(); ctx.arc(n.x, n.y, r + 2, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+        ctx.beginPath(); ctx.arc(n.dx, n.dy, r + 2, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
         ctx.shadowBlur = 0;
         const im = avatarImg(n.ref);
-        ctx.save(); ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.clip();
-        if (im) ctx.drawImage(im, n.x - r, n.y - r, r * 2, r * 2);
-        else { ctx.fillStyle = "#3a2f29"; ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2); ctx.fillStyle = "#fbf6f0"; ctx.font = `600 ${Math.max(7, r * 0.85)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials(n.name), n.x, n.y + r * 0.05); }
+        ctx.save(); ctx.beginPath(); ctx.arc(n.dx, n.dy, r, 0, Math.PI * 2); ctx.clip();
+        if (im) ctx.drawImage(im, n.dx - r, n.dy - r, r * 2, r * 2);
+        else { ctx.fillStyle = "#3a2f29"; ctx.fillRect(n.dx - r, n.dy - r, r * 2, r * 2); ctx.fillStyle = "#fbf6f0"; ctx.font = `600 ${Math.max(7, r * 0.85)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials(n.name), n.dx, n.dy + r * 0.05); }
         ctx.restore();
         if ((showNames || hi || (F && nb.has(n.id))) && !dim(n)) {
           ctx.font = `500 ${11 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "top";
           ctx.lineWidth = 3.5 / Math.sqrt(k); ctx.strokeStyle = "rgba(21,15,12,.85)"; ctx.lineJoin = "round";
-          ctx.strokeText(n.name, n.x, n.y + r + 5); ctx.fillStyle = "#fbf6f0"; ctx.fillText(n.name, n.x, n.y + r + 5);
+          ctx.strokeText(n.name, n.dx, n.dy + r + 5); ctx.fillStyle = "#fbf6f0"; ctx.fillText(n.name, n.dx, n.dy + r + 5);
         }
       }
       ctx.globalAlpha = 1;
@@ -312,23 +317,39 @@ export function NetworkPage({ client, flash }) {
     for (let i = g.nodes.length - 1; i >= 0; i--) {
       const n = g.nodes[i]; if (n.t0 > T) continue;
       const rad = n.kind === "c" ? n.size / 2 : n.r + 3;
-      if (Math.abs(n.x - wx) <= rad && Math.abs(n.y - wy) <= rad) { if (n.kind === "p") return n; best = best || n; }
+      const nx = n.dx ?? n.x, ny = n.dy ?? n.y;
+      if (Math.abs(nx - wx) <= rad && Math.abs(ny - wy) <= rad) { if (n.kind === "p") return n; best = best || n; }
     }
     return best;
   };
   const drag = useRef(null);
   const onDown = (e) => {
     if (!g) return; canvas.current.setPointerCapture(e.pointerId);
+    pts.current.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.current.size === 2) {   // second finger: switch from drag/pan to pinch
+      const [a, b] = [...pts.current.values()], bx = canvas.current.getBoundingClientRect();
+      if (drag.current?.n) { drag.current.n.fx = null; drag.current.n.fy = null; }
+      drag.current = null;
+      pinch.current = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]), k0: view.current.k, cx: (a[0] + b[0]) / 2 - bx.left, cy: (a[1] + b[1]) / 2 - bx.top };
+      return;
+    }
     const [wx, wy] = toWorld(e), n = hit(wx, wy);
     drag.current = { n, sx: e.clientX, sy: e.clientY, tx: view.current.tx, ty: view.current.ty, moved: false };
-    if (n) { n.fx = n.x; n.fy = n.y; sim.current.alphaTarget(0.25).restart(); }
+    if (n) { n.fx = n.x; n.fy = n.y; sim.current.alphaTarget(0.12).restart(); }
   };
   const onMove = (e) => {
     if (!g) return;
+    if (pts.current.has(e.pointerId)) pts.current.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinch.current && pts.current.size >= 2) {
+      const [a, b] = [...pts.current.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), p = pinch.current;
+      const k2 = Math.min(6, Math.max(0.15, p.k0 * (d / p.d0))), v = view.current;
+      v.tx = p.cx - (p.cx - v.tx) * (k2 / v.k); v.ty = p.cy - (p.cy - v.ty) * (k2 / v.k); v.k = k2;
+      return;
+    }
     const d = drag.current;
     if (d) {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 3) d.moved = true;
-      if (d.n) { const [wx, wy] = toWorld(e); d.n.fx = wx; d.n.fy = wy; }
+      if (d.n) { const [wx, wy] = toWorld(e); d.n.fx = wx; d.n.fy = wy; d.n.dx = wx; d.n.dy = wy; }
       else { view.current.tx = d.tx + (e.clientX - d.sx); view.current.ty = d.ty + (e.clientY - d.sy); }
       return;
     }
@@ -339,10 +360,20 @@ export function NetworkPage({ client, flash }) {
     canvas.current.style.cursor = n ? "pointer" : "grab";
   };
   const onUp = (e) => {
+    pts.current.delete(e.pointerId);
+    if (pinch.current) { if (pts.current.size < 2) pinch.current = null; return; }
     const d = drag.current; drag.current = null; if (!d) return;
     if (d.n) { d.n.fx = null; d.n.fy = null; sim.current.alphaTarget(0); }
     if (!d.moved) setFocus((f) => (d.n ? (f === d.n.id ? null : d.n.id) : null));
   };
+  const zoomBy = (f, cx, cy) => {
+    const v = view.current, W = wrap.current.clientWidth, H = wrap.current.clientHeight;
+    const mx = cx ?? (W - (W > 1100 ? 336 : 0)) / 2, my = cy ?? H / 2, k2 = Math.min(6, Math.max(0.15, v.k * f));
+    v.tx = mx - (mx - v.tx) * (k2 / v.k); v.ty = my - (my - v.ty) * (k2 / v.k); v.k = k2;
+  };
+  const zoomStep = (dir) => { let i = 0; const tick = () => { zoomBy(dir > 0 ? 1.06 : 1 / 1.06); if (++i < 8) requestAnimationFrame(tick); }; tick(); };
+  const pinch = useRef(null);   // { d0, k0, cx, cy } while two pointers are down
+  const pts = useRef(new Map());
   const onWheel = (e) => {
     e.preventDefault(); const b = canvas.current.getBoundingClientRect(), v = view.current;
     const mx = e.clientX - b.left, my = e.clientY - b.top, f = Math.exp(-e.deltaY * 0.0016), k2 = Math.min(6, Math.max(0.15, v.k * f));
@@ -352,8 +383,11 @@ export function NetworkPage({ client, flash }) {
   const fit = () => {
     if (!g || !wrap.current) return;
     const T = tRef.current, vis = g.nodes.filter((n) => n.t0 <= T); if (!vis.length) return;
-    const xs = vis.map((n) => n.x), ys = vis.map((n) => n.y), W = wrap.current.clientWidth, H = wrap.current.clientHeight;
-    const x0 = Math.min(...xs) - 70, x1 = Math.max(...xs) + 70, y0 = Math.min(...ys) - 70, y1 = Math.max(...ys) + 70;
+    // frame the body of the graph, not the one straggler: trim 4% off each edge once there are enough nodes
+    const q = (arr, f) => arr[Math.min(arr.length - 1, Math.max(0, Math.round(f * (arr.length - 1))))];
+    const xs = vis.map((n) => n.x).sort((a, b) => a - b), ys = vis.map((n) => n.y).sort((a, b) => a - b), W = wrap.current.clientWidth, H = wrap.current.clientHeight;
+    const lo = vis.length > 20 ? 0.04 : 0, hi = 1 - lo;
+    const x0 = q(xs, lo) - 70, x1 = q(xs, hi) + 70, y0 = q(ys, lo) - 70, y1 = q(ys, hi) + 70;
     // frame inside the clear stage: right rail (336) and the control bar / scrubber (top 110, bottom 100)
     const rail = W > 1100 ? 336 : 0, top = 110, bot = 100, aw = W - rail - 24, ah = H - top - bot;
     const k = Math.min(6, Math.max(0.15, Math.min(aw / (x1 - x0), ah / (y1 - y0))));
@@ -397,6 +431,11 @@ export function NetworkPage({ client, flash }) {
         <button onClick=${fit}>Fit</button>
         <button onClick=${snapshot}>Snapshot</button>
       </div>
+    </div>
+    <div class="net-zoom">
+      <button onClick=${() => zoomStep(1)} title="Zoom in">＋</button>
+      <button onClick=${() => zoomStep(-1)} title="Zoom out">－</button>
+      <button onClick=${fit} title="Fit everything">⤢</button>
     </div>
 
     ${g && ins && html`<aside class="net-rail">

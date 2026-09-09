@@ -1,18 +1,18 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar } from "./ui.js?v=44";
-import { Dashboard } from "./dashboard.js?v=44";
-import { SharedMap } from "./sharedmap.js?v=44";
-import { Overview } from "./overview.js?v=44";
-import { DataPage } from "./datatable.js?v=44";
-import { CRMPage } from "./crm.js?v=44";
-import { IssuesPage } from "./issues.js?v=44";
-import { UpNextPage } from "./upnext.js?v=44";
-import { AdsPage } from "./ads.js?v=44";
-import { ModerationPage } from "./moderation.js?v=44";
-import { CanvasPage } from "./canvasflow.js?v=44";
-import { NetworkPage } from "./network.js?v=44";
+import { html, Avatar } from "./ui.js?v=45";
+import { Dashboard } from "./dashboard.js?v=45";
+import { SharedMap } from "./sharedmap.js?v=45";
+import { Overview } from "./overview.js?v=45";
+import { DataPage } from "./datatable.js?v=45";
+import { CRMPage } from "./crm.js?v=45";
+import { IssuesPage } from "./issues.js?v=45";
+import { UpNextPage } from "./upnext.js?v=45";
+import { AdsPage } from "./ads.js?v=45";
+import { ModerationPage } from "./moderation.js?v=45";
+import { CanvasPage } from "./canvasflow.js?v=45";
+import { NetworkPage } from "./network.js?v=45";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up

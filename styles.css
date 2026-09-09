@@ -627,3 +627,6 @@ a { color: inherit; }
 .net-tip b { color: #fbf6f0; display: block; margin-bottom: 2px; }
 .net-tip .tiny { font-size: 10.5px; color: #8a7e75; margin-top: 3px; }
 @media (max-width: 1100px) { .net-rail { display: none; } .net-bar, .net-time { right: 16px; } }
+.net-zoom { position: absolute; left: 16px; bottom: 112px; display: flex; flex-direction: column; gap: 4px; background: rgba(21,15,12,.78); backdrop-filter: blur(12px); border: 1px solid rgba(251,246,240,.1); border-radius: 12px; padding: 4px; }
+.net-zoom button { width: 34px; height: 34px; border: 0; border-radius: 9px; background: none; color: #fbf6f0; font-size: 17px; cursor: pointer; }
+.net-zoom button:hover { background: rgba(251,246,240,.12); }
