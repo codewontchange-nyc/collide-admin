@@ -2,6 +2,8 @@ import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
 import { html, Avatar } from "./ui.js?v=__V__";
+import { ENV, COLS, showError } from "./db.js?v=__V__";
+import { PAGES, PAGE, routeNow, go, canSee } from "./routes.js?v=__V__";
 import { Dashboard } from "./dashboard.js?v=__V__";
 import { SharedMap } from "./sharedmap.js?v=__V__";
 import { Overview } from "./overview.js?v=__V__";
@@ -65,24 +67,15 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
 /* Three worlds: Overview (platform-level, every community), Dashboard (ONE
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
-   facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map", "network", "upnext", "canvas", "data", "crm", "billing", "mod", "ads", "issues"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", network: "Network", data: "Data", crm: "CRM", billing: "Billing", mod: "Moderation", canvas: "UX Onboarding", ads: "Ads", issues: "Issues", upnext: "Up Next" };
-const DASH_SUBS = ["announcements", "events", "members", "money", "meals", "settings", "partnerships"];
-const DATA_SUBS = ["communities", "people", "announcements", "events", "members", "facilitators", "circles", "dms", "invites", "bans"];
-const CRM_SUBS = ["funnel", "campaigns", "activity"];
-
-const routeNow = () => {
-  const parts = (location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/");   // `?k=v` after the path is page-local (e.g. Moderation deep links)
-  let p = parts[0] || "", sub = parts[1] || "";
-  if (DASH_SUBS.includes(p)) { sub = p; p = "dashboard"; }   // legacy top-level links
-  if (!PAGES.includes(p)) return { page: "overview", sub: "" };
-  const subs = p === "dashboard" ? DASH_SUBS : p === "data" ? DATA_SUBS : p === "crm" ? CRM_SUBS : [];
-  return { page: p, sub: subs.includes(sub) ? sub : "" };
+   facilitator sections live as tabs inside Dashboard. The page table, tabs
+   and owner gating live in routes.js; this is just which component draws each. */
+const VIEW = {
+  overview: Overview, dashboard: Dashboard, map: SharedMap, network: NetworkPage, upnext: UpNextPage,
+  canvas: CanvasPage, data: DataPage, crm: CRMPage, billing: BillingPage, mod: ModerationPage, ads: AdsPage, issues: IssuesPage,
 };
 
 /* ---- web push: the console is itself a push client ---- */
-const VAPID_PUBLIC = "BI1Xp1ZvZNopnjJcUYUl7ZoK99SlCzIkq8yXGo3FT0tJALblL1EkseSrZKzixa-kIxYBviIQsA6QTV_-F_e5Ttg";
+const VAPID_PUBLIC = ENV.VAPID_PUBLIC;
 const b64ToU8 = (s) => {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
   const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
@@ -162,6 +155,7 @@ function App() {
   const [sent, setSent] = useState(false);
   const [authErr, setAuthErr] = useState("");
   const [staffRows, setStaffRows] = useState(undefined); // undefined = loading
+  const [gateErr, setGateErr] = useState(null);           // the staff read itself failed (network / RLS) — not "not authorized"
   const [communities, setCommunities] = useState([]);
   const [commId, setCommId] = useState(localStorage.getItem("ca.comm") || "");
   const [route, setRoute] = useState(routeNow());
@@ -200,14 +194,17 @@ function App() {
     if (!session) { setStaffRows(undefined); return; }
     let live = true;
     (async () => {
-      const { data: staff } = await client.from("staff").select("*");
+      const { data: staff, error: staffErr } = await client.from("staff").select(COLS.staff);
       if (!live) return;
+      if (staffErr) { setGateErr(showError(null, "staff", staffErr)); setStaffRows([]); return; }
+      setGateErr(null);
       const mine = (staff || []).filter((s) => s.email?.toLowerCase() === session.user.email?.toLowerCase());
       setStaffRows(mine);
       if (!mine.length) return;
       // RLS scopes this: owners see every community, facilitators just theirs
-      const { data: comms } = await client.from("communities").select("*").order("created_at");
+      const { data: comms, error: commErr } = await client.from("communities").select("*").order("created_at");
       if (!live) return;
+      if (commErr) showError(flash, "Communities", commErr);
       // owners see every community; facilitators only the ones on their staff rows
       const owner = mine.some((s) => s.role === "owner");
       const scoped = owner ? (comms || [])
@@ -218,7 +215,7 @@ function App() {
       if (saved && scoped.some((c) => c.id === saved)) setCommId(saved);
       else if (living.length) setCommId(living[0].id);
       else if (scoped.length) setCommId(scoped[0].id);
-      const { data: prof } = await client.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+      const { data: prof } = await client.from("profiles").select(COLS.profileMin).eq("id", session.user.id).maybeSingle();
       if (live) setProfile(prof || null);
     })();
     return () => { live = false; };
@@ -230,7 +227,6 @@ function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-  const go = (p) => { location.hash = "/" + p; };
 
   const isOwner = useMemo(() => (staffRows || []).some((s) => s.role === "owner"), [staffRows]);
   const community = communities.find((c) => c.id === commId) || null;
@@ -240,6 +236,9 @@ function App() {
   if (session === undefined) return html`<div class="boot"><div class="boot-mark"><span class="dot pink"></span><span class="dot teal"></span></div><div class="boot-text">collide</div></div>`;
   if (!session) return html`<${Login} onSent=${sendLink} sent=${sent} error=${authErr} />`;
   if (staffRows === undefined) return html`<div class="boot"><div class="boot-mark"><span class="dot pink"></span><span class="dot teal"></span></div><div class="boot-text">checking access…</div></div>`;
+  if (gateErr) return html`<div class="login"><div style="font-size:40px">📡</div><h1>Couldn't reach Collide</h1>
+    <p>The staff check failed: <b>${gateErr}</b></p>
+    <div class="u-row"><button class="btn" onClick=${() => location.reload()}>Try again</button><button class="btn ghost" onClick=${signOut}>Sign out</button></div></div>`;
   if (!staffRows.length) return html`<${NotAuthorized} email=${session.user.email} onSignOut=${signOut} />`;
 
   const ctx = { client, community, communities, isOwner, session, flash, go, pickComm };
@@ -248,48 +247,18 @@ function App() {
     <div class="topbar">
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
-        ${PAGES.filter((p) => (p !== "data" && p !== "crm" && p !== "mod" && p !== "network" && p !== "billing") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
+        ${PAGES.filter((p) => canSee(p.key, isOwner)).map((p) => html`<button class=${page === p.key ? "on" : ""} aria-current=${page === p.key ? "page" : undefined} onClick=${() => go(p.key)}>${p.label}</button>`)}
       </div>
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
       <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
     </div>
     <div class="main">
-      ${page === "overview"
-        ? html`<${Overview} ...${ctx} />`    /* platform level — every community, never toggled */
-        : page === "map"
-        ? html`<${SharedMap} ...${ctx} />`   /* the shared map is app-wide, no community needed */
-        : page === "network"
-        ? (isOwner
-          ? html`<${NetworkPage} ...${ctx} />`   /* the whole platform as a social graph — owners only */
-          : html`<div class="empty">The Network view is owner-only.</div>`)
-        : page === "data"
-        ? (isOwner
-          ? html`<${DataPage} ...${ctx} sub=${route.sub} />`  /* god view — owners only */
-          : html`<div class="empty">The Data tables are owner-only.</div>`)
-        : page === "crm"
-        ? (isOwner
-          ? html`<${CRMPage} ...${ctx} sub=${route.sub} />`   /* funnel + drips — owners only */
-          : html`<div class="empty">The CRM is owner-only.</div>`)
-        : page === "billing"
-        ? (isOwner
-          ? html`<${BillingPage} ...${ctx} />`   /* Collide's Stripe plans — owners only */
-          : html`<div class="empty">Billing is owner-only.</div>`)
-        : page === "canvas"
-        ? html`<${CanvasPage} ...${ctx} />`     /* figma-style onboarding flow editor — staff */
-        : page === "mod"
-        ? (isOwner
-          ? html`<${ModerationPage} ...${ctx} />`  /* all member content, hide/restore/delete — owner-only */
-          : html`<div class="empty">Moderation is owner-only.</div>`)
-        : page === "ads"
-        ? html`<${AdsPage} ...${ctx} />`      /* funnel creative — formats, PNG export, deeplinks */
-        : page === "upnext"
-        ? html`<${UpNextPage} ...${ctx} />`   /* city journal — staff write stories into the app's Up next */
-        : page === "issues"
-        ? html`<${IssuesPage} ...${ctx} />`   /* telemetry report — staff-visible, RLS-scoped */
-        : !community
+      ${!canSee(page, isOwner)
+        ? html`<div class="empty">${PAGE[page].label} is owner-only.</div>`
+        : PAGE[page].needsCommunity && !community
         ? html`<div class="empty">No community yet.${isOwner ? " Create one in Settings." : " Ask the owner to assign you to one."}</div>`
-        : html`<${Dashboard} ...${ctx} sub=${route.sub} />`}
+        : html`<${VIEW[page]} ...${ctx} sub=${route.sub} query=${route.query} />`}
     </div>
     ${toast && html`<div class="toast">${toast}</div>`}
   </div>`;
