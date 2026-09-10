@@ -110,14 +110,14 @@ export function useLoader(load, deps, opts = {}) {
   const seq = useRef(0);
   const run = useCallback(async () => {
     const my = ++seq.current;
-    set((s) => ({ data: keep ? s.data : s.data, error: null, loading: true }));
+    set((s) => ({ ...s, error: null, loading: true }));   // a reload keeps the old rows on screen
     let res;
     try { res = await load(); } catch (e) { res = { error: e }; }
     if (my !== seq.current) return;
     if (res && res.error) { set({ data: [], error: showError(flash, where, res.error), loading: false }); return; }
     set({ data: res && "data" in res ? (res.data || []) : (res || []), error: null, loading: false });
   }, deps);   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { run(); }, [run]);
+  useEffect(() => { if (!keep) set({ data: null, error: null, loading: true }); run(); }, [run]);   // deps changed → fresh "loading"
 
   const rt = JSON.stringify(realtime || null);
   useEffect(() => {

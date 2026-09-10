@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=__V__";
+import { html, BRAND, confirmDanger } from "./ui.js?v=__V__";
+import { showError } from "./db.js?v=__V__";
 
 /* Map ink — vector drawing on top of the city map artwork.
    Elements live in a 0–1000 normalized space (viewBox stretched over the
@@ -8,7 +9,7 @@ import { html } from "./ui.js?v=__V__";
    the same everywhere. Saved per city to map_drawings: `elements` (source,
    for re-editing) + `svg` (compiled overlay the app renders verbatim). */
 
-const COLORS = ["#241d1a", "#e85d75", "#18857a", "#f0a830", "#3b6fb6", "#ffffff"];
+const COLORS = [BRAND.ink, BRAND.rose, BRAND.teal, BRAND.amber, BRAND.blue, BRAND.white];
 const TOOLS = [
   ["pencil", "✏️", "Pencil — thin freehand"],
   ["brush", "🖌️", "Brush — thick soft stroke"],
@@ -46,7 +47,7 @@ const elSvg = (e, i) => {
   if (e.t === "ellipse")
     return `<ellipse${di} cx="${e.cx}" cy="${e.cy}" rx="${e.rx}" ry="${e.ry}" fill="none" stroke="${e.c}" stroke-width="${e.w}"${vec}/>`;
   if (e.t === "text")
-    return `<text${di} x="${e.x}" y="${e.y}" fill="${e.c}" font-family="Lacquer, cursive" font-size="${e.s}" paint-order="stroke" stroke="#fbf6f0" stroke-width="${Math.max(2, e.s / 8)}" stroke-linejoin="round">${esc(e.text)}</text>`;
+    return `<text${di} x="${e.x}" y="${e.y}" fill="${e.c}" font-family="Lacquer, cursive" font-size="${e.s}" paint-order="stroke" stroke="${BRAND.paper}" stroke-width="${Math.max(2, e.s / 8)}" stroke-linejoin="round">${esc(e.text)}</text>`;
   return "";
 };
 
@@ -63,7 +64,7 @@ export function InkOverlay({ elements }) {
 export function MapInk({ client, city, flash, onExit, saved, onSaved }) {
   const [els, setEls] = useState(saved || []);
   const [tool, setTool] = useState("pencil");
-  const [color, setColor] = useState("#241d1a");
+  const [color, setColor] = useState(BRAND.ink);
   const [size, setSize] = useState(4);
   const [draft, setDraftState] = useState(null);  // element being drawn
   const [textAt, setTextAt] = useState(null);     // {x,y} while typing
@@ -90,7 +91,7 @@ export function MapInk({ client, city, flash, onExit, saved, onSaved }) {
   };
   const undo = () => { if (!undoStack.current.length) return; redoStack.current.push(elsRef.current); setElsBoth(undoStack.current.pop()); setDirty(true); };
   const redo = () => { if (!redoStack.current.length) return; undoStack.current.push(elsRef.current); setElsBoth(redoStack.current.pop()); setDirty(true); };
-  const clearAll = () => { if (!elsRef.current.length || !confirm("Clear every mark on this city's map?")) return; undoStack.current.push(elsRef.current); redoStack.current = []; setElsBoth([]); setDirty(true); };
+  const clearAll = () => { if (!elsRef.current.length || !confirmDanger("Clear every mark on this city's map?")) return; undoStack.current.push(elsRef.current); redoStack.current = []; setElsBoth([]); setDirty(true); };
 
   const norm = (ev) => {
     const r = svgRef.current.getBoundingClientRect();
@@ -168,11 +169,11 @@ export function MapInk({ client, city, flash, onExit, saved, onSaved }) {
       updated_at: new Date().toISOString(), updated_by: sess?.session?.user?.email || null,
     }, { onConflict: "city" });
     setSaving(false);
-    if (error) flash(error.message);
+    if (error) showError(flash, "Map ink", error);
     else { setDirty(false); flash("Map ink saved — live for members 🖋️"); onSaved?.(els); }
   };
   const exit = () => {
-    if (dirty && !confirm("Leave drawing mode without saving? Unsaved marks are lost.")) return;
+    if (dirty && !confirmDanger("Leave drawing mode without saving? Unsaved marks are lost.")) return;
     onExit();
   };
 
@@ -203,7 +204,7 @@ export function MapInk({ client, city, flash, onExit, saved, onSaved }) {
       <button class="ink-tool" title="Redo" disabled=${!redoStack.current.length} onClick=${redo}>↪︎</button>
       <button class="ink-tool" title="Clear all" onClick=${clearAll}>🗑</button>
       <span class="ink-sep"></span>
-      <button class="btn small" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save" : "Saved ✓"}</button>
-      <button class="btn small ghost" onClick=${exit}>Done</button>
+      <button class="btn sm" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save" : "Saved ✓"}</button>
+      <button class="btn sm ghost" onClick=${exit}>Done</button>
     </div>`;
 }

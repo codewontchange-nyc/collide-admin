@@ -690,6 +690,8 @@ a { color: inherit; }
 .tone-ok { color: var(--ok-ink); } .tone-warn { color: var(--warn-ink); } .tone-bad { color: var(--bad); }
 .amt { text-align: right; font-weight: 600; color: var(--ok-ink); font-variant-numeric: tabular-nums; }
 .who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.thumb-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ink); color: #fff; font-size: 11px; line-height: 1; cursor: pointer; }
+h2 .sub { font: 400 13px var(--body); color: var(--muted); margin-left: 6px; }
 .inset { background: var(--paper); border-radius: var(--r-sm); padding: 14px; }
 .narrow { max-width: 560px; }
 .section-label .sub { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 4px; }

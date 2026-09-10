@@ -53,6 +53,7 @@ export const parseDate = (v) => {
 };
 const loc = (d, opts) => d.toLocaleDateString(undefined, opts);
 export const shortDate = (v) => { const d = parseDate(v); return d ? loc(d, { month: "short", day: "numeric", year: "2-digit" }) : "—"; };
+export const longDate = (v) => { const d = parseDate(v); return d ? loc(d, { weekday: "long", month: "long", day: "numeric" }) : ""; };
 export const fullDate = (v) => { const d = parseDate(v); return d ? loc(d, { month: "short", day: "numeric", year: "numeric" }) : "—"; };
 export const shortDateTime = (v) => { const d = parseDate(v); return d ? d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"; };
 export const timeOf = (v) => { const d = parseDate(v); return d ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "—"; };

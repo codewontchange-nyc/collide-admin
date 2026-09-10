@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html } from "./ui.js?v=__V__";
+import { html, BRAND, Loading, ago, confirmDanger } from "./ui.js?v=__V__";
+import { showError } from "./db.js?v=__V__";
 
 /* Canvas — a Figma-style flow editor for the onboarding journeys.
    Mini phone screens laid left→right per flow with connectors, on a
@@ -8,15 +9,8 @@ import { html } from "./ui.js?v=__V__";
    drawer restores any of them). Document lives in canvas_docs (staff RLS),
    versions in canvas_versions. */
 
-const FLOW_COLORS = { "Website sign-up": "#18857a", "Event invite": "#e85d75", "Add to circle": "#f0a830", "First login": "#3b6fb6" };
+const FLOW_COLORS = { "Website sign-up": BRAND.teal, "Event invite": BRAND.rose, "Add to circle": BRAND.amber, "First login": BRAND.blue };
 const PHONE_W = 210, PHONE_H = 420;
-
-const ago = (iso) => {
-  const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 60000));
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
-};
 
 
 /* First-login onboarding v1 — staged once into the doc (doc.ftu_v1 guards).
@@ -87,7 +81,7 @@ function El({ el, onEdit, onCommit, bound }) {
   }
   if (el.t === "avatars") {
     return html`<div class=${cls}>
-      <span class="cve-avrow">${[0, 1, 2, 3].map((i) => html`<span key=${i} class="cve-av" style=${`background:${["#e85d75", "#18857a", "#f0a830", "#3b6fb6"][i]}`}></span>`)}</span>
+      <span class="cve-avrow">${[0, 1, 2, 3].map((i) => html`<span key=${i} class="cve-av" style=${`background:${[BRAND.rose, BRAND.teal, BRAND.amber, BRAND.blue][i]}`}></span>`)}</span>
       <${Editable} text=${el.text} cls="cve-avname" onEdit=${onEdit} onCommit=${onCommit} /></div>`;
   }
   if (el.t === "toggle") {
@@ -133,7 +127,7 @@ export function CanvasPage({ client, session, flash }) {
   useEffect(() => {
     client.from("canvas_docs").select("doc").eq("id", "onboarding").maybeSingle()
       .then(({ data, error }) => {
-        if (error) flash(error.message);
+        if (error) showError(flash, "Canvas", error);
         const d0 = data?.doc || { screens: [] };
         const d1 = migrateFtu(d0);
         setDoc(d1);
@@ -149,7 +143,7 @@ export function CanvasPage({ client, session, flash }) {
     copyRef.current = next; setCopy(next);
     const by = session?.user?.email || null;
     const { error } = await client.from("onboarding_copy").upsert({ key, text, updated_at: new Date().toISOString(), updated_by: by }, { onConflict: "key" });
-    if (error) flash(error.message); else flash("Live — users see this now ✨");
+    if (error) showError(flash, "Live copy", error); else flash("Live — users see this now ✨");
   };
 
   useEffect(() => {
@@ -232,7 +226,7 @@ export function CanvasPage({ client, session, flash }) {
     setDoc({ ...docRef.current, screens: [...docRef.current.screens, { id, flow, x: rightmost + 260, y, title: "New screen", els: [{ t: "h", text: "Headline" }, { t: "p", text: "Click any text to edit it." }] }] });
   };
   const removeScreen = (sid) => () => {
-    if (!confirm("Remove this screen from the canvas?")) return;
+    if (!confirmDanger("Remove this screen from the canvas?")) return;
     snapshot();
     setDoc({ ...docRef.current, screens: docRef.current.screens.filter((q) => q.id !== sid) });
   };
@@ -244,21 +238,21 @@ export function CanvasPage({ client, session, flash }) {
     const { error } = await client.from("canvas_docs").update({ doc: docRef.current, updated_at: new Date().toISOString(), updated_by: by }).eq("id", "onboarding");
     if (!error) await client.from("canvas_versions").insert({ doc_id: "onboarding", doc: docRef.current, saved_by: by });
     setSaving(false);
-    if (error) flash(error.message); else { setDirty(false); flash("Saved — version added to history ✓"); if (versions) openHistory(); }
+    if (error) showError(flash, "Save", error); else { setDirty(false); flash("Saved — version added to history ✓"); if (versions) openHistory(); }
   };
   const openHistory = async () => {
     const { data, error } = await client.from("canvas_versions").select("id,saved_at,saved_by,label").eq("doc_id", "onboarding").order("saved_at", { ascending: false }).limit(40);
-    if (error) flash(error.message); else setVersions(data || []);
+    if (error) showError(flash, "History", error); else setVersions(data || []);
   };
   const restore = (vid) => async () => {
     const { data, error } = await client.from("canvas_versions").select("doc").eq("id", vid).single();
-    if (error) return flash(error.message);
+    if (error) return showError(flash, "Restore", error);
     snapshot();
     setDoc(data.doc);
     flash("Version restored to canvas — Save to keep it");
   };
 
-  if (doc === null) return html`<div class="empty" style="border:0">Unrolling the canvas…</div>`;
+  if (doc === null) return html`<${Loading} label="Unrolling the canvas…" />`;
 
   /* connectors: consecutive screens within a flow, ordered by x */
   const byFlow = {};
@@ -274,17 +268,17 @@ export function CanvasPage({ client, session, flash }) {
 
   return html`<div class="cv-page">
     <div class="cv-topbar">
-      <h2>UX Onboarding <span class="muted" style="font:400 13px var(--body)">onboarding flows — click text to edit · drag screens · scroll to zoom</span></h2>
+      <h2>UX Onboarding <span class="sub">onboarding flows — click text to edit · drag screens · scroll to zoom</span></h2>
       <div class="cv-tools">
-        ${Object.keys(FLOW_COLORS).map((f) => html`<button key=${f} class="btn small ghost" onClick=${addScreen(f)} title=${"Add a screen to " + f}
+        ${Object.keys(FLOW_COLORS).map((f) => html`<button key=${f} class="btn sm ghost" onClick=${addScreen(f)} title=${"Add a screen to " + f}
           style=${`border-color:${FLOW_COLORS[f]};color:${FLOW_COLORS[f]}`}>+ ${f.split(" ")[0]}</button>`)}
         <span class="ink-sep"></span>
-        <button class="btn small ghost" onClick=${undo} title="Undo (⌘Z)">↩︎</button>
-        <button class="btn small ghost" onClick=${redo} title="Redo (⌘⇧Z)">↪︎</button>
-        <button class="btn small ghost" onClick=${() => setView({ x: 20, y: 20, z: 0.85 })}>Fit</button>
+        <button class="btn sm ghost" onClick=${undo} title="Undo (⌘Z)" aria-label="Undo">↩︎</button>
+        <button class="btn sm ghost" onClick=${redo} title="Redo (⌘⇧Z)" aria-label="Redo">↪︎</button>
+        <button class="btn sm ghost" onClick=${() => setView({ x: 20, y: 20, z: 0.85 })}>Fit</button>
         <span class="ink-sep"></span>
-        <button class="btn small ghost" onClick=${() => versions ? setVersions(null) : openHistory()}>🕘 History</button>
-        <button class="btn small" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save version" : "Saved ✓"}</button>
+        <button class="btn sm ghost" onClick=${() => versions ? setVersions(null) : openHistory()}>🕘 History</button>
+        <button class="btn sm" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save version" : "Saved ✓"}</button>
       </div>
     </div>
 
@@ -293,16 +287,16 @@ export function CanvasPage({ client, session, flash }) {
         <svg class="cv-links" width="4000" height="2200">
           ${arrows.map((a, i) => html`<g key=${i}>
             <path d=${`M${a.x1} ${a.y1} C${a.x1 + 60} ${a.y1} ${a.x2 - 60} ${a.y2} ${a.x2 - 8} ${a.y2}`}
-              fill="none" stroke=${FLOW_COLORS[a.flow] || "#8a7e75"} stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round" />
-            <circle cx=${a.x2 - 6} cy=${a.y2} r="3.5" fill=${FLOW_COLORS[a.flow] || "#8a7e75"} />
+              fill="none" stroke=${FLOW_COLORS[a.flow] || BRAND.muted} stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round" />
+            <circle cx=${a.x2 - 6} cy=${a.y2} r="3.5" fill=${FLOW_COLORS[a.flow] || BRAND.muted} />
           </g>`)}
         </svg>
         ${Object.keys(byFlow).map((f) => {
           const first = [...byFlow[f]].sort((a, b) => a.x - b.x)[0];
-          return html`<div key=${f} class="cv-flowlab" style=${`left:${first.x}px;top:${first.y - 34}px;color:${FLOW_COLORS[f] || "#8a7e75"}`}>${f}</div>`;
+          return html`<div key=${f} class="cv-flowlab" style=${`left:${first.x}px;top:${first.y - 34}px;color:${FLOW_COLORS[f] || BRAND.muted}`}>${f}</div>`;
         })}
         ${doc.screens.map((s) => { const proposed = s.status === "proposed"; return html`<div key=${s.id} class=${"cv-phone" + (proposed ? " cv-proposed" : "")} style=${`left:${s.x}px;top:${s.y}px`}>
-          <div class="cv-phead" onPointerDown=${dragScreen(s)} style=${`background:${FLOW_COLORS[s.flow] || "#8a7e75"}`}>
+          <div class="cv-phead" onPointerDown=${dragScreen(s)} style=${`background:${FLOW_COLORS[s.flow] || BRAND.muted}`}>
             <span key=${s.title} contentEditable spellcheck="false" onFocus=${() => { editingRef.current = true; }} onBlur=${commitTitle(s.id)}
               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
               onPointerDown=${(e) => e.stopPropagation()}>${s.title}</span>
@@ -327,11 +321,11 @@ export function CanvasPage({ client, session, flash }) {
       </div>
 
       ${versions && html`<div class="cv-drawer">
-        <div class="cv-dhead"><b>Version history</b><button class="linkbtn tiny" onClick=${() => setVersions(null)}>close</button></div>
+        <div class="cv-dhead"><b>Version history</b><button class="btn link tiny" onClick=${() => setVersions(null)}>close</button></div>
         ${versions.length === 0 && html`<p class="tiny muted" style="padding:0 14px">No versions yet — hit Save to create the first one.</p>`}
         ${versions.map((v, i) => html`<div key=${v.id} class="cv-vrow">
           <div><b>${i === 0 ? "Latest save" : "Version"}</b><div class="tiny muted">${ago(v.saved_at)}${v.saved_by ? " · " + v.saved_by.split("@")[0] : ""}</div></div>
-          <button class="btn small ghost" onClick=${restore(v.id)}>Restore</button>
+          <button class="btn sm ghost" onClick=${restore(v.id)}>Restore</button>
         </div>`)}
       </div>`}
     </div>

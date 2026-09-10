@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, uploadMedia, mediaUrl, CITIES, cityName } from "./ui.js?v=__V__";
+import { useState, useRef, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
+import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, confirmDanger } from "./ui.js?v=__V__";
+import { useLoader, paged, storageUrl, BUCKETS, firstError, showError } from "./db.js?v=__V__";
 import { MapInk, InkOverlay } from "./drawtools.js?v=__V__";
 import { EMOJI } from "./emoji-data.js?v=__V__";
 
@@ -38,8 +39,7 @@ function EmojiPicker({ value, onPick }) {
       placeholder="Search any emoji… pizza, dj, hike" value=${q} onInput=${(e) => setQ(e.target.value)} />
     ${!needle && html`<div class="tiny muted" style="font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Recent</div>`}
     <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:168px;overflow-y:auto">
-      ${shown.map((em) => html`<button type="button" key=${em} class="btn small ghost"
-        style=${value === em ? "border-color:#17181a" : ""} onClick=${() => pick(em)}>${em}</button>`)}
+      ${shown.map((em) => html`<button type="button" key=${em} class="chip" aria-pressed=${value === em ? "true" : "false"} onClick=${() => pick(em)}>${em}</button>`)}
       ${needle && !shown.length && html`<span class="tiny muted" style="padding:6px">No match — try another word</span>`}
     </div>
   </div>`;
@@ -99,61 +99,43 @@ function Birds() {
   </div>`;
 }
 
-const mapImageUrl = (client, path) => {
-  if (!path) return null;
-  try { return client.storage.from("map").getPublicUrl(path).data.publicUrl; } catch { return null; }
-};
 
 export function SharedMap({ client, session, flash, readonly = false, compact = false, community = null, communities = [] }) {
-  const [city, setCity] = useState(localStorage.getItem("ca.mapcity") || "nyc");
-  const [cfg, setCfg] = useState(undefined);
-  const [events, setEvents] = useState([]);
-  const [comms, setComms] = useState([]);
-  const [pois, setPois] = useState([]);
-  const [yaps, setYaps] = useState([]);
+  const [city, setCity] = useState(localStorage.getItem("ca.mapcity") || DEFAULT_CITY);
   const [editing, setEditing] = useState(null);   // {x,y,_new} | map_event row | {_kind:'poi', ...poi row}
   const [inkMode, setInkMode] = useState(false);
-  const [ink, setInk] = useState([]);             // saved map_drawings elements for this city
+  const [imgFailed, setImgFailed] = useState(false);
   const wrap = useRef(null);
   const drag = useRef(null);
 
-  const pickCity = (c) => { localStorage.setItem("ca.mapcity", c); setCfg(undefined); setCity(c); };
+  const pickCity = (c) => { localStorage.setItem("ca.mapcity", c); setImgFailed(false); setCity(c); };
 
-  const loadSeq = useRef(0);
-  const load = useCallback(async () => {
-    const my = ++loadSeq.current;   // guard: a stale load must never paint another city's pins
+  // one load per city; realtime (filtered to this city) re-runs it so app edits appear here live, and vice versa
+  const byCity = (t) => ({ table: t, filter: `city=eq.${city}` });
+  const { data, error, reload, setData } = useLoader(async () => {
     const [c, e, k, p, d, y] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
-      client.from("map_events").select("*").eq("city", city).order("created_at"),
+      paged((a, b) => client.from("map_events").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
-      client.from("pois").select("*").eq("city", city),
+      paged((a, b) => client.from("pois").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
-      client.from("yaps").select("*").eq("city", city),
+      paged((a, b) => client.from("yaps").select("*").eq("city", city).order("created_at").range(a, b)),
     ]);
-    if (my !== loadSeq.current) return;
-    const err = [c, e, k, p, d, y].find((r) => r.error);
-    if (err) flash("Map load failed: " + err.error.message);
-    setCfg(c.data || null);
-    setInk(d.data?.elements || []);
-    setEvents((e.data || []).filter(alive));
-    setComms((k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at));
-    setPois((p.data || []).filter((r) => r.x != null && r.y != null));
-    setYaps((y.data || []).filter(alive).filter((r) => r.x != null && r.y != null));
-  }, [client, city]);
-  useEffect(() => { load(); }, [load]);
-
-  /* realtime: app edits appear here live, and vice versa */
-  useEffect(() => {
-    const ch = client.channel("ca-map-" + Math.random().toString(36).slice(2, 6))
-      .on("postgres_changes", { event: "*", schema: "public", table: "map_events" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "map_config" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "communities" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "pois" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "yaps" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "map_drawings" }, load)
-      .subscribe();
-    return () => { try { client.removeChannel(ch); } catch {} };
-  }, [client, load]);
+    const err = firstError([c, e, k, p, d, y]); if (err) return { error: err };
+    return { data: {
+      cfg: c.data || null,
+      ink: d.data?.elements || [],
+      events: (e.data || []).filter(alive),
+      comms: (k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at),
+      pois: (p.data || []).filter((r) => r.x != null && r.y != null),
+      yaps: (y.data || []).filter(alive).filter((r) => r.x != null && r.y != null),
+    } };
+  }, [client, city], { flash, where: "Map", client, realtime: ["map_events", "map_config", "communities", "pois", "yaps", "map_drawings"].map(byCity) });
+  const load = reload;
+  const ready = data && !Array.isArray(data) ? data : null;
+  const cfg = ready === null ? undefined : (imgFailed ? null : ready.cfg);
+  const { events = [], pois = [], yaps = [], ink = [] } = ready || {};
+  const setInk = (els) => setData((d) => (d && !Array.isArray(d) ? { ...d, ink: els } : d));
 
   const frac = (ev) => {
     const r = wrap.current.getBoundingClientRect();
@@ -186,7 +168,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       const d = drag.current;
       if (d?.moved && d.f) {
         const { error } = await client.from(d.table).update({ x: d.f.x, y: d.f.y }).eq("id", d.row.id);
-        if (error) flash(error.message); else flash("Moved 📍");
+        if (error) showError(flash, "Move", error); else flash("Moved 📍");
         load();
       } else if (d && !d.moved) {
         if (d.table === "map_events") setEditing(d.row);
@@ -205,7 +187,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
       const path = `bg-${city}-${Date.now()}.${ext}`;
       // versioned path per upload → safe to cache forever (no-cache artwork made every map open re-download it)
-      const { error } = await client.storage.from("map").upload(path, file, { contentType: file.type || "image/jpeg", upsert: true, cacheControl: "31536000" });
+      const { error } = await client.storage.from(BUCKETS.map).upload(path, file, { contentType: file.type || "image/jpeg", upsert: true, cacheControl: "31536000" });
       if (error) throw error;
       // one artwork row per city — first upload opens the city
       const { error: e2 } = await client.from("map_config").upsert(
@@ -215,7 +197,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       await client.from("cities").update({ map_image_path: path }).eq("code", city);
       flash(`${cityName(city)} artwork updated 🗺️`);
       load();
-    } catch (e) { flash(e.message || String(e)); }
+    } catch (e) { showError(flash, "Artwork", e); }
   };
 
   /* Cluster preview: the app folds any pins whose centers land within 46
@@ -239,26 +221,23 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     return groups.filter((g) => g.n > 1).map((g) => ({ x: g.x / g.n, y: g.y / g.n, n: g.n }));
   }, [aspect, pois, events]);
 
-  const img = cfg === undefined ? undefined : mapImageUrl(client, cfg?.image_path);
+  const img = cfg === undefined ? undefined : storageUrl(BUCKETS.map, cfg?.image_path);
 
-  return html`<div>
-    ${!compact && html`<div class="pagehead">
-      <h2 style="margin:0">Map <span class="muted" style="font:400 13px Inter">the same map members see — edits are live in the app</span></h2>
-      ${!readonly && html`<div style="display:flex;gap:8px">
+  return html`<${Page} card=${false} title=${compact ? "" : "Map"} sub=${compact ? "" : "the same map members see — edits are live in the app"}
+    actions=${!compact && !readonly && html`
         <button class=${"btn" + (inkMode ? "" : " ghost")} onClick=${() => setInkMode(!inkMode)}>✏️ ${inkMode ? "Drawing…" : "Draw"}</button>
-        <label class="btn ghost" style="cursor:pointer">${cfg ? "Replace" : "Upload"} ${cityName(city)} artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>
-      </div>`}
+        <label class="btn ghost">${cfg ? "Replace" : "Upload"} ${cityName(city)} artwork<input type="file" accept="image/*" style="display:none" onChange=${uploadArt} /></label>`}>
+    ${!compact && html`<div class="chips" style="margin-bottom:12px">
+      ${CITIES.map(([k, label]) => html`<button class="chip" aria-pressed=${city === k ? "true" : "false"} onClick=${() => pickCity(k)}>${label}</button>`)}
     </div>`}
-    ${!compact && html`<div class="subnav" style="margin-bottom:12px">
-      ${CITIES.map(([k, label]) => html`<button class=${city === k ? "on" : ""} onClick=${() => pickCity(k)}>${label}</button>`)}
-    </div>`}
-    ${img === undefined ? html`<div class="empty">Loading map…</div>`
-      : !img ? html`<div class="empty">No ${cityName(city)} artwork yet — the cartographer is still inking 🖋️<br/><span class="tiny muted">Upload artwork above to open this city's map.</span></div>`
+    ${error ? html`<${LoadError} what="the map" error=${error} onRetry=${reload} />`
+      : img === undefined ? html`<${Loading} label="Loading map…" />`
+      : !img ? html`<${Empty}>No ${cityName(city)} artwork yet — the cartographer is still inking 🖋️<br/><span class="tiny muted">Upload artwork above to open this city's map.</span></${Empty}>`
       : html`<div class=${"smap" + (compact ? " compact" : "")} ref=${wrap} onClick=${onMapClick}>
           <img class="smap-img" src=${img} alt="Community map" draggable=${false} decoding="async"
             ref=${(el) => { if (el && el.complete && el.naturalWidth) setAspect(el.naturalWidth / el.naturalHeight); }}
             onLoad=${(e) => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
-            onError=${() => { flash(`${cityName(city)} artwork failed to load from storage — try re-uploading it`); setCfg(null); }} />
+            onError=${() => { flash(`${cityName(city)} artwork failed to load from storage — try re-uploading it`); setImgFailed(true); }} />
           <${Clouds} />
           <${Birds} />
           ${pois.map((p) => html`<button key=${"p" + p.id} class="map-poi" title=${p.name}
@@ -283,10 +262,10 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
       community=${community} communities=${communities} city=${city}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
-  </div>`;
+  </${Page}>`;
 }
 
-function PinModal({ client, session, pin, flash, community, communities, city = "nyc", onClose, onSaved }) {
+function PinModal({ client, session, pin, flash, community, communities, city = DEFAULT_CITY, onClose, onSaved }) {
   const isNew = !!pin._new;
   const isPoi = pin._kind === "poi";
   const [kind, setKind] = useState(isPoi ? "poi" : "event");
@@ -339,26 +318,26 @@ function PinModal({ client, session, pin, flash, community, communities, city = 
         }
       }
       onSaved();
-    } catch (err) { flash(err.message || String(err)); }
+    } catch (err) { showError(flash, "Save pin", err); }
     setBusy(false);
   };
   const renew = async () => {
     const { error } = await client.from("map_events").update({ expires_at: plus7d() }).eq("id", pin.id);
-    if (error) flash(error.message); else { flash("Renewed for 7 days"); onSaved(); }
+    if (error) showError(flash, "Renew", error); else { flash("Renewed for 7 days"); onSaved(); }
   };
   const remove = async () => {
     const table = kind === "poi" ? "pois" : "map_events";
-    if (!confirm(`Remove this ${kind === "poi" ? "POI" : "pin"} from the map?`)) return;
+    if (!confirmDanger(`Remove this ${kind === "poi" ? "POI" : "pin"} from the map?`)) return;
     const { error } = await client.from(table).delete().eq("id", pin.id);
-    if (error) flash(error.message); else { flash("Removed"); onSaved(); }
+    if (error) showError(flash, "Remove", error); else { flash("Removed"); onSaved(); }
   };
 
   return html`<${Modal} title=${isNew ? "Add to the map" : kind === "poi" ? "Edit POI" : "Edit pin"} onClose=${onClose}>
     <form onSubmit=${save}>
       ${isNew && html`<div class="field"><label>What is it?</label>
-        <div style="display:flex;gap:6px">
-          <button type="button" class="btn small ghost" style=${kind === "event" ? "border-color:#17181a;font-weight:700" : ""} onClick=${() => setKind("event")}>🎉 Event pin</button>
-          <button type="button" class="btn small ghost" style=${kind === "poi" ? "border-color:#17181a;font-weight:700" : ""} onClick=${() => setKind("poi")}>⚫ Point of interest</button>
+        <div class="chips">
+          <button type="button" class="chip" aria-pressed=${kind === "event" ? "true" : "false"} onClick=${() => setKind("event")}>🎉 Event pin</button>
+          <button type="button" class="chip" aria-pressed=${kind === "poi" ? "true" : "false"} onClick=${() => setKind("poi")}>⚫ Point of interest</button>
         </div></div>`}
       ${kind === "poi" ? html`
         <div class="fieldrow">
@@ -382,8 +361,7 @@ function PinModal({ client, session, pin, flash, community, communities, city = 
           ${gallery.length > 0 && html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
             ${gallery.map((p) => html`<div style="position:relative">
               <img src=${mediaUrl(client, p)} alt="" style="width:74px;height:52px;object-fit:cover;border-radius:8px" />
-              <button type="button" title="Remove photo" onClick=${() => setGallery(gallery.filter((x) => x !== p))}
-                style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#17181a;color:#fff;font-size:11px;line-height:1;cursor:pointer">×</button>
+              <button type="button" class="thumb-x" title="Remove photo" aria-label="Remove photo" onClick=${() => setGallery(gallery.filter((x) => x !== p))}>×</button>
             </div>`)}
           </div>`}
           <input type="file" accept="image/*" multiple onChange=${(e) => setGalleryFiles([...e.target.files])} />
@@ -393,8 +371,8 @@ function PinModal({ client, session, pin, flash, community, communities, city = 
         <div class="field"><label>Pin emoji ${f.emoji && html`<span style="font-size:15px">${f.emoji}</span>`}</label>
           <${EmojiPicker} value=${f.emoji} onPick=${(em) => setF({ ...f, emoji: em })} /></div>
         <div class="field"><label>Big event? Give it a landmark</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            ${VENUES.map((v) => html`<button type="button" class="btn small ghost" style=${f.venue === v.key ? "border-color:#17181a;font-weight:700" : ""}
+          <div class="chips">
+            ${VENUES.map((v) => html`<button type="button" class="chip" aria-pressed=${f.venue === v.key ? "true" : "false"}
               onClick=${() => setF({ ...f, venue: v.key })}>${v.label}</button>`)}
           </div></div>
         <div class="field"><label>Title</label><input value=${f.title} onInput=${set("title")} placeholder="Rooftop DJ set" /></div>
@@ -406,11 +384,11 @@ function PinModal({ client, session, pin, flash, community, communities, city = 
         <div class="field"><label>Link</label><input value=${f.link} onInput=${set("link")} placeholder="https://…" /></div>
       `}
       <div class="actions" style="justify-content:space-between">
-        <div style="display:flex;gap:8px">
-          ${!isNew && html`${kind !== "poi" && html`<button type="button" class="btn small ghost" onClick=${renew}>Renew 7d</button>`}
-            <button type="button" class="btn small danger" onClick=${remove}>Remove</button>`}
+        <div class="u-row" style="gap:8px">
+          ${!isNew && html`${kind !== "poi" && html`<button type="button" class="btn sm ghost" onClick=${renew}>Renew 7d</button>`}
+            <button type="button" class="btn sm danger" onClick=${remove}>Remove</button>`}
         </div>
-        <div style="display:flex;gap:10px">
+        <div class="u-row">
           <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
           <button class="btn" disabled=${busy}>${busy ? "Saving…" : isNew ? (kind === "poi" ? "Add POI" : "Drop pin") : "Save"}</button>
         </div>

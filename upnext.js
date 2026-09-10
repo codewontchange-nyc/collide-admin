@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, mediaUrl, uploadMedia, CITIES, cityName } from "./ui.js?v=__V__";
+import { useState, useEffect, useRef } from "https://esm.sh/preact@10.23.2/hooks";
+import { html, Avatar, Page, Pill, Loading, Empty, LoadError, mediaUrl, uploadMedia, CITIES, cityName, DEFAULT_CITY, longDate, agoDay, confirmDanger } from "./ui.js?v=__V__";
+import { useLoader, showError } from "./db.js?v=__V__";
 
 /* Up Next — the city journal, blog style. The CURRENT post is what members
    see under their Up next feed in the app; previous posts are the archive;
@@ -57,41 +58,30 @@ export const domToStory = (root) => {
   return blocks.join("\n\n");
 };
 
-const nice = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "";
-const ago = (iso) => {
-  if (!iso) return "";
-  const d = Math.floor((Date.now() - new Date(iso)) / 864e5);
-  return d === 0 ? "today" : d === 1 ? "yesterday" : `${d}d ago`;
-};
+const nice = longDate, ago = agoDay;
 
 export function UpNextPage({ client, session, flash }) {
-  const [city, setCity] = useState(localStorage.getItem("ca.storycity") || "nyc");
-  const [rows, setRows] = useState(null);
+  const [city, setCity] = useState(localStorage.getItem("ca.storycity") || DEFAULT_CITY);
   const [editing, setEditing] = useState(null);   // null | {} (new) | story row
 
-  const pickCity = (c) => { localStorage.setItem("ca.storycity", c); setRows(null); setEditing(null); setCity(c); };
+  const pickCity = (c) => { localStorage.setItem("ca.storycity", c); setEditing(null); setCity(c); };
 
-  const load = useCallback(async () => {
-    const { data, error } = await client.from("stories")
+  const { data: rows, error, reload: load } = useLoader(() => client.from("stories")
       .select("*, author:profiles!stories_author_id_fkey(id,display_name,avatar_url)")
-      .eq("city", city).order("created_at", { ascending: false }).limit(200);
-    if (error) flash(error.message);
-    setRows(data || []);
-  }, [client, city]);
-  useEffect(() => { load(); }, [load]);
+      .eq("city", city).order("created_at", { ascending: false }).limit(200), [client, city], { flash, where: "Up Next" });
 
   const setPublished = async (s, published) => {
-    const { error } = await client.from("stories").update({
+    const { error: e } = await client.from("stories").update({
       published, published_at: published ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }).eq("id", s.id);
-    if (error) flash(error.message);
+    if (e) showError(flash, "Publish", e);
     else { flash(published ? "Published — it leads Up next now ✨" : "Unpublished — back to drafts"); load(); }
   };
   const remove = async (s) => {
-    if (!confirm(`Delete "${s.title}"? Members will see it disappear from Up next.`)) return;
-    const { error } = await client.from("stories").delete().eq("id", s.id);
-    if (error) flash(error.message); else { flash("Deleted"); if (editing?.id === s.id) setEditing(null); load(); }
+    if (!confirmDanger(`Delete "${s.title}"? Members will see it disappear from Up next.`)) return;
+    const { error: e } = await client.from("stories").delete().eq("id", s.id);
+    if (e) showError(flash, "Delete", e); else { flash("Deleted"); if (editing?.id === s.id) setEditing(null); load(); }
   };
 
   const published = (rows || []).filter((r) => r.published)
@@ -100,70 +90,65 @@ export function UpNextPage({ client, session, flash }) {
   const previous = published.slice(1);
   const drafts = (rows || []).filter((r) => !r.published);
 
-  const Actions = ({ s }) => html`<div class="rowactions" style="flex:none">
-    <button class="btn small ghost" onClick=${() => setEditing(s)}>Edit</button>
-    <button class="btn small ${s.published ? "ghost" : ""}" onClick=${() => setPublished(s, !s.published)}>${s.published ? "Unpublish" : "Publish"}</button>
-    <button class="btn small danger" onClick=${() => remove(s)}>Delete</button>
+  const Actions = ({ s }) => html`<div class="rowactions">
+    <button class="btn sm ghost" onClick=${() => setEditing(s)}>Edit</button>
+    <button class="btn sm ${s.published ? "ghost" : ""}" onClick=${() => setPublished(s, !s.published)}>${s.published ? "Unpublish" : "Publish"}</button>
+    <button class="btn sm danger" onClick=${() => remove(s)}>Delete</button>
   </div>`;
 
-  return html`<div class="page">
-    <div class="reading">
-    <div class="pagehead">
-      <h2>Up Next <span class="muted" style="font:400 13px var(--body)">the city journal — the current post leads members' Up next feed</span></h2>
-      ${!editing && html`<button class="btn" onClick=${() => setEditing({})}>✍️ New post</button>`}
-    </div>
-    <div class="subnav" style="margin-bottom:16px">
-      ${CITIES.map(([k, label]) => html`<button class=${city === k ? "on" : ""} onClick=${() => pickCity(k)}>${label}</button>`)}
+  return html`<${Page} reading title="Up Next" sub="the city journal — the current post leads members' Up next feed"
+    actions=${!editing && html`<button class="btn" onClick=${() => setEditing({})}>✍️ New post</button>`}>
+    <div class="chips" style="margin-bottom:16px">
+      ${CITIES.map(([k, label]) => html`<button class="chip" aria-pressed=${city === k ? "true" : "false"} onClick=${() => pickCity(k)}>${label}</button>`)}
     </div>
 
     ${editing && html`<${InlineEditor} key=${editing.id || "new"} client=${client} session=${session} city=${city} flash=${flash}
       story=${editing.id ? editing : null}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
 
-    ${rows === null ? html`<div class="empty" style="border:0">Loading…</div>` : html`
+    ${error ? html`<${LoadError} what="stories" error=${error} onRetry=${load} />` : rows === null ? html`<${Loading} />` : html`
       <div class="section-label">Current post — live in ${cityName(city)}</div>
-      ${current ? html`<div class="card story-hero">
+      ${current ? html`<div class="inset story-hero">
         ${current.images?.[0] && html`<img class="story-hero-cover" src=${mediaUrl(client, current.images[0])} alt="" />`}
         <div class="story-hero-body">
           <div class="story-kicker">${cityName(city)} · ${nice(current.published_at)}</div>
           <h3 class="story-hero-title">${current.title}</h3>
           <div class="story-byline">
             ${current.author && html`<${Avatar} profile=${current.author} size="sm" /> <b>${current.author.display_name || "—"}</b>`}
-            ${current.video_url && html`<span class="pillstat">🎬 video</span>`}
+            ${current.video_url && html`<${Pill} tone="neutral">🎬 video</${Pill}>`}
             ${current.images?.length > 1 && html`<span class="muted tiny">${current.images.length} photos</span>`}
           </div>
           <div class="story-prose" dangerouslySetInnerHTML=${{ __html: storyHtml(current.body) }}></div>
           ${current.images?.length > 1 && html`<div class="story-strip">
             ${current.images.slice(1).map((p) => html`<img src=${mediaUrl(client, p)} alt="" key=${p} />`)}
           </div>`}
-          <div style="margin-top:12px"><${Actions} s=${current} /></div>
+          <div class="u-mt-1"><${Actions} s=${current} /></div>
         </div>
-      </div>` : html`<div class="empty" style="margin-bottom:18px">Nothing live in ${cityName(city)} — members see no editorial until you publish ✍️</div>`}
+      </div>` : html`<${Empty}>Nothing live in ${cityName(city)} — members see no editorial until you publish ✍️</${Empty}>`}
 
-      ${drafts.length > 0 && html`<div class="section-label" style="margin-top:22px">Drafts</div>
-        ${drafts.map((s) => html`<div class="card story-row" key=${s.id}>
+      ${drafts.length > 0 && html`<div class="section-label u-mt-2">Drafts</div>
+        ${drafts.map((s) => html`<div class="inset story-row" key=${s.id}>
           ${s.images?.[0] ? html`<img class="story-cover" src=${mediaUrl(client, s.images[0])} alt="" />` : html`<div class="story-cover ph">📝</div>`}
-          <div style="flex:1;min-width:0">
-            <div class="story-title">${s.title} <span class="pillstat pending">draft</span></div>
+          <div class="u-grow">
+            <div class="story-title">${s.title} <${Pill} tone="warn">draft</${Pill}></div>
             <div class="story-meta">${s.author?.display_name || "—"} · drafted ${ago(s.created_at)}</div>
             ${s.body && html`<div class="story-excerpt">${s.body.slice(0, 120)}${s.body.length > 120 ? "…" : ""}</div>`}
           </div>
           <${Actions} s=${s} />
         </div>`)}`}
 
-      <div class="section-label" style="margin-top:22px">Previous posts ${previous.length > 0 && html`<span class="muted">· ${previous.length}</span>`}</div>
+      <div class="section-label u-mt-2">Previous posts ${previous.length > 0 && html`<span class="muted">· ${previous.length}</span>`}</div>
       ${previous.length === 0 && html`<p class="tiny muted">No archive yet — when you publish a new post, the old one lands here (still readable in the app, just no longer leading).</p>`}
-      ${previous.map((s) => html`<div class="card story-row" key=${s.id}>
+      ${previous.map((s) => html`<div class="inset story-row" key=${s.id}>
         ${s.images?.[0] ? html`<img class="story-cover" src=${mediaUrl(client, s.images[0])} alt="" />` : html`<div class="story-cover ph">📰</div>`}
-        <div style="flex:1;min-width:0">
-          <div class="story-title">${s.title} <span class="pillstat member">was live</span></div>
+        <div class="u-grow">
+          <div class="story-title">${s.title} <${Pill} tone="ok">was live</${Pill}></div>
           <div class="story-meta">${s.author?.display_name || "—"} · published ${nice(s.published_at)}</div>
           ${s.body && html`<div class="story-excerpt">${s.body.slice(0, 120)}${s.body.length > 120 ? "…" : ""}</div>`}
         </div>
         <${Actions} s=${s} />
       </div>`)}`}
-    </div>
-  </div>`;
+  </${Page}>`;
 }
 
 /* the writing surface: same typography as the published hero, formatted live */
@@ -239,7 +224,7 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
       for (const file of files) paths.push(await uploadMedia(client, "story", file));
       setImages((im) => [...im, ...paths]);
       flash(`${paths.length} photo${paths.length === 1 ? "" : "s"} added`);
-    } catch (err) { flash(err.message || String(err)); }
+    } catch (err) { showError(flash, "Photos", err); }
     setBusy(false);
     e.target.value = "";
   };
@@ -260,12 +245,12 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
           published: !!publish, published_at: publish ? new Date().toISOString() : null });
     const { error } = await q;
     setBusy(false);
-    if (error) { flash(error.message); return; }
+    if (error) { showError(flash, "Save", error); return; }
     flash(publish ? "Published — it leads Up next now ✨" : "Draft saved");
     onSaved();
   };
 
-  return html`<div class="card story-editor">
+  return html`<div class="inset story-editor">
     <div class="story-kicker">${story ? "Editing" : "New post"} · ${cityName(city)}</div>
     <input class="story-edit-title" value=${title} onInput=${(e) => setTitle(e.target.value)}
       placeholder="The week ahead in ${cityName(city)}" />
@@ -276,7 +261,7 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
       <button title="Bold" onMouseDown=${cmd(() => document.execCommand("bold"))}><b>B</b></button>
       <button title="Italic" onMouseDown=${cmd(() => document.execCommand("italic"))}><i>I</i></button>
       <button title="Pull quote" onMouseDown=${cmd(() => block("blockquote"))}>❝</button>
-      <span class="tiny" style="color:var(--faint);margin-left:auto">formatted exactly as readers see it</span>
+      <span class="tiny muted" style="margin-left:auto">formatted exactly as readers see it</span>
     </div>
     <div class="story-prose story-editarea" contenteditable="true" ref=${prose}
       onDragStart=${onDragStart} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}
@@ -292,17 +277,16 @@ function InlineEditor({ client, session, city, story, flash, onClose, onSaved })
           <img src=${mediaUrl(client, p)} alt="" draggable=${true} title="Drag into the story to place it"
             onDragStart=${(e) => { e.dataTransfer.setData("text/plain", "collide-img:" + mediaUrl(client, p)); e.dataTransfer.effectAllowed = "copy"; }}
             style=${"width:86px;height:60px;object-fit:cover;border-radius:8px;cursor:grab" + (i === 0 ? ";outline:2px solid var(--rose)" : "")} />
-          <button type="button" title="Remove photo" onClick=${() => setImages(images.filter((x) => x !== p))}
-            style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#241d1a;color:#fff;font-size:11px;line-height:1;cursor:pointer">×</button>
+          <button type="button" class="thumb-x" title="Remove photo" aria-label="Remove photo" onClick=${() => setImages(images.filter((x) => x !== p))}>×</button>
         </div>`)}
       </div>`}
       <input type="file" accept="image/*" multiple onChange=${addImages} /></div>
 
     <div class="actions" style="justify-content:space-between;margin-top:14px">
       <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-      <div style="display:flex;gap:10px">
-        <button type="button" class="btn ghost" disabled=${busy} onClick=${() => save(story ? null : false)}>${busy ? "…" : "Save draft"}</button>
-        <button type="button" class="btn" disabled=${busy} onClick=${() => save(true)}>${busy ? "…" : "Publish"}</button>
+      <div class="u-row">
+        <button type="button" class="btn ghost" disabled=${busy} onClick=${() => save(story ? null : false)}>${busy ? "Saving…" : "Save draft"}</button>
+        <button type="button" class="btn" disabled=${busy} onClick=${() => save(true)}>${busy ? "Publishing…" : "Publish"}</button>
       </div>
     </div>
   </div>`;
