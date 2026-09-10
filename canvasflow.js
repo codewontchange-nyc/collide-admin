@@ -104,7 +104,7 @@ const PhoneChrome = () => html`<div class="cv-status">
   <span class="cv-stat"><span class="cv-sig"></span><span class="cv-wifi"></span><span class="cv-batt"></span></span>
 </div>`;
 
-export function CanvasPage({ client, session, flash }) {
+export function CanvasPage({ client, session, flash, isOwner }) {
   const [doc, setDocState] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -139,6 +139,7 @@ export function CanvasPage({ client, session, flash }) {
 
   // write a live-bound string straight to the CMS — users see it immediately
   const writeCopy = async (key, text) => {
+    if (!isOwner) { flash("Live onboarding copy is owner-only"); setCopy({ ...copyRef.current }); return; }
     const next = { ...copyRef.current, [key]: text };
     copyRef.current = next; setCopy(next);
     const by = session?.user?.email || null;
@@ -268,7 +269,7 @@ export function CanvasPage({ client, session, flash }) {
 
   return html`<div class="cv-page">
     <div class="cv-topbar">
-      <h2>UX Onboarding <span class="sub">onboarding flows — click text to edit · drag screens · scroll to zoom</span></h2>
+      <h2>UX Onboarding <span class="sub">${isOwner ? "onboarding flows — click text to edit · drag screens · scroll to zoom" : "onboarding flows — read-only for facilitators (owners edit)"}</span></h2>
       <div class="cv-tools">
         ${Object.keys(FLOW_COLORS).map((f) => html`<button key=${f} class="btn sm ghost" onClick=${addScreen(f)} title=${"Add a screen to " + f}
           style=${`border-color:${FLOW_COLORS[f]};color:${FLOW_COLORS[f]}`}>+ ${f.split(" ")[0]}</button>`)}
@@ -278,7 +279,7 @@ export function CanvasPage({ client, session, flash }) {
         <button class="btn sm ghost" onClick=${() => setView({ x: 20, y: 20, z: 0.85 })}>Fit</button>
         <span class="ink-sep"></span>
         <button class="btn sm ghost" onClick=${() => versions ? setVersions(null) : openHistory()}>🕘 History</button>
-        <button class="btn sm" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save version" : "Saved ✓"}</button>
+        ${isOwner && html`<button class="btn sm" disabled=${saving || !dirty} onClick=${save}>${saving ? "Saving…" : dirty ? "Save version" : "Saved ✓"}</button>`}
       </div>
     </div>
 

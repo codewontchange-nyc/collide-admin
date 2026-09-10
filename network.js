@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from "https://esm.sh/d3-force@3.0.0";
-import { html, fetchAll, cityName } from "./ui.js?v=__V__";
+import { html, cityName, BRAND, CATEGORICAL, cityColor, fullDate, initials, pct, DAY, avatarSrc, LoadError } from "./ui.js?v=__V__";
+import { useLoader, paged, firstError } from "./db.js?v=__V__";
 
 /* Network — the platform as a living social graph. Communities are squares,
    people are their profile pictures, and three kinds of ties run between them:
@@ -12,36 +13,32 @@ import { html, fetchAll, cityName } from "./ui.js?v=__V__";
 
    Rendering is a canvas + d3-force; everything else is Preact. */
 
-const PALETTE = ["#e85d75", "#2fb3a5", "#f0a830", "#8b6cf0", "#4c9be8", "#7cc242", "#f27d3a", "#e6c14a", "#d95bb6", "#39c2d7", "#a3e078", "#ff8fa3"];
-const CITY_COLOR = { nyc: "#e85d75", atl: "#2fb3a5", global: "#f0a830" };
 const CITY_X = { nyc: -0.28, atl: 0.28 };   // fraction of stage width the city clusters gravitate to
-const DAY = 864e5;
 const ms = (iso) => (iso ? +new Date(iso) : 0);
-const fmtDate = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-const initials = (n) => (n || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
-const pct = (n, d) => (d ? Math.round((n / d) * 100) + "%" : "—");
+const fmtDate = (t) => fullDate(new Date(t));
+// canvas can't read CSS variables — these mirror the .stage-dark tokens
+const INK = { paper: BRAND.darkPaper, surface: BRAND.darkSurface, text: BRAND.darkInk, cream: BRAND.paper, muted: BRAND.faint, halo: "rgba(21,15,12,.85)" };
 
 /* ---------- data → graph ---------- */
 async function loadGraph(client) {
   const [comm, prof, mem, conn, rsvp, act] = await Promise.all([
     client.from("communities").select("id,name,emoji,city,image_path,created_at,archived_at"),
-    fetchAll((a, b) => client.from("profiles").select("id,display_name,avatar_url,created_at,home_city").range(a, b)),
-    fetchAll((a, b) => client.from("community_members").select("community_id,profile_id,status,joined_at").range(a, b)),
-    fetchAll((a, b) => client.from("connections").select("a,b,status,created_at,requested_by").range(a, b)),
-    fetchAll((a, b) => client.from("rsvps").select("activity_id,profile_id,status,created_at").eq("status", "going").range(a, b)),
-    fetchAll((a, b) => client.from("activities").select("id,community_id,title,date,created_at").range(a, b)),
+    paged((a, b) => client.from("profiles").select("id,display_name,avatar_url,created_at,home_city").range(a, b)),
+    paged((a, b) => client.from("community_members").select("community_id,profile_id,status,joined_at").range(a, b)),
+    paged((a, b) => client.from("connections").select("a,b,status,created_at,requested_by").range(a, b)),
+    paged((a, b) => client.from("rsvps").select("activity_id,profile_id,status,created_at").eq("status", "going").range(a, b)),
+    paged((a, b) => client.from("activities").select("id,community_id,title,date,created_at").range(a, b)),
   ]);
-  const err = [comm, prof, mem, conn, rsvp, act].find((r) => r.error);
-  if (err) throw new Error(err.error.message);
-  return { communities: (comm.data || []).filter((c) => !c.archived_at), people: prof.data || [], memberships: mem.data || [],
-    connections: conn.data || [], rsvps: rsvp.data || [], activities: act.data || [] };
+  const err = firstError([comm, prof, mem, conn, rsvp, act]); if (err) return { error: err };
+  return { data: { communities: (comm.data || []).filter((c) => !c.archived_at), people: prof.data || [], memberships: mem.data || [],
+    connections: conn.data || [], rsvps: rsvp.data || [], activities: act.data || [] } };
 }
 
 function buildGraph(d) {
   const nodes = [], byId = new Map();
   d.communities.forEach((c, i) => {
     const n = { id: "c:" + c.id, kind: "c", ref: c, name: c.name, emoji: c.emoji || "🏘️", city: c.city || "global",
-      color: PALETTE[i % PALETTE.length], t0: ms(c.created_at), members: 0, x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 400 };
+      color: CATEGORICAL[i % CATEGORICAL.length], t0: ms(c.created_at), members: 0, x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 400 };
     nodes.push(n); byId.set(n.id, n);
   });
   d.people.forEach((p) => {
@@ -82,7 +79,7 @@ function buildGraph(d) {
   });
   nodes.forEach((n) => {
     if (n.kind === "c") n.size = Math.min(92, 46 + n.members * 4);
-    else { n.r = Math.min(19, 9.5 + n.deg * 1.1 + n.comms.length * 1.2); n.color = n.comms[0]?.color || CITY_COLOR[n.city] || "#9a8f86"; }
+    else { n.r = Math.min(19, 9.5 + n.deg * 1.1 + n.comms.length * 1.2); n.color = n.comms[0]?.color || cityColor(n.city); }
   });
   const times = [...nodes.map((n) => n.t0), ...links.map((l) => l.t0)].filter(Boolean);
   const tMin = Math.min(...times) - DAY, tMax = Date.now();
@@ -138,17 +135,15 @@ function growthSeries(g) {
 /* ---------- avatar cache (canvas-safe) ---------- */
 const imgCache = new Map();
 function avatarImg(p) {
-  const raw = p.avatar_url; if (!raw) return null;
-  if (imgCache.has(raw)) { const im = imgCache.get(raw); return im.complete && im.naturalWidth ? im : null; }
-  const im = new Image(); im.crossOrigin = "anonymous";
-  im.src = raw.startsWith("http") ? raw : `${window.CA_CONFIG?.SUPABASE_URL || ""}/storage/v1/object/public/avatars/${raw}`;
-  imgCache.set(raw, im); return null;
+  const src = avatarSrc(p); if (!src) return null;
+  if (imgCache.has(src)) { const im = imgCache.get(src); return im.complete && im.naturalWidth ? im : null; }
+  const im = new Image(); im.crossOrigin = "anonymous"; im.src = src;
+  imgCache.set(src, im); return null;
 }
 
 /* ---------- the page ---------- */
 export function NetworkPage({ client, flash }) {
   const [g, setG] = useState(null);
-  const [err, setErr] = useState(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [layers, setLayers] = useState({ m: true, x: true, e: false, pending: false, labels: true, cityPull: true });
@@ -163,12 +158,11 @@ export function NetworkPage({ client, flash }) {
   const focusRef = useRef(null), layersRef = useRef(layers), colorRef = useRef(colorBy), hoverRef = useRef(null);
   focusRef.current = focus; layersRef.current = layers; colorRef.current = colorBy;
 
+  const { data: raw, error: err, reload } = useLoader(() => loadGraph(client), [client], { flash, where: "Network" });
   useEffect(() => {
-    let live = true;
-    loadGraph(client).then((d) => { if (!live) return; const gg = buildGraph(d); setG(gg); setT(gg.tMax); tRef.current = gg.tMax; })
-      .catch((e) => { if (live) setErr(e.message); });
-    return () => { live = false; };
-  }, [client]);
+    if (!raw || Array.isArray(raw)) return;
+    const gg = buildGraph(raw); setG(gg); setT(gg.tMax); tRef.current = gg.tMax; appear.current.clear();
+  }, [raw]);
 
   const series = useMemo(() => (g ? growthSeries(g) : null), [g]);
   const tDay = Math.floor(t / DAY) * DAY;
@@ -237,7 +231,7 @@ export function NetworkPage({ client, flash }) {
       const Ly = layersRef.current, cb = colorRef.current, F = focusRef.current ? g.byId.get(focusRef.current) : null;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const bg = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, Math.max(W, H) * 0.75);
-      bg.addColorStop(0, "#2a211c"); bg.addColorStop(1, "#150f0c");
+      bg.addColorStop(0, INK.surface); bg.addColorStop(1, INK.paper);
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
 
@@ -246,7 +240,7 @@ export function NetworkPage({ client, flash }) {
       const nb = new Set(); if (F) { nb.add(F.id); g.links.forEach((l) => { if (!visL(l) || l.kind === "e") return; if (l.source === F) nb.add(l.target.id); if (l.target === F) nb.add(l.source.id); }); }
       const dim = (n) => (F && !nb.has(n.id));
       const scaleOf = (n) => { let a = appear.current.get(n.id); if (!a) { a = now; appear.current.set(n.id, a); } const p = Math.min(1, (now - a) / 520); return 1 - Math.pow(1 - p, 3); };
-      const colorOf = (n) => (cb === "city" ? (CITY_COLOR[n.city] || "#9a8f86") : n.color);
+      const colorOf = (n) => (cb === "city" ? cityColor(n.city) : n.color);
 
       // edges
       ctx.lineCap = "round";
@@ -257,8 +251,8 @@ export function NetworkPage({ client, flash }) {
         const sc = Math.min(scaleOf(l.source), scaleOf(l.target));
         ctx.globalAlpha = (faded ? 0.06 : 1) * sc;
         if (l.kind === "m") { ctx.strokeStyle = cb === "city" ? colorOf(l.target) : l.color; ctx.lineWidth = 1.3; ctx.globalAlpha *= 0.42; ctx.setLineDash([]); }
-        else if (l.kind === "x") { ctx.strokeStyle = "#f6ecdf"; ctx.lineWidth = l.pending ? 1 : 1.6; ctx.globalAlpha *= l.pending ? 0.28 : 0.62; ctx.setLineDash(l.pending ? [4, 5] : []); }
-        else { ctx.strokeStyle = "#f0a830"; ctx.lineWidth = 0.7 + l.w * 0.6; ctx.globalAlpha *= 0.16; ctx.setLineDash([]); }
+        else if (l.kind === "x") { ctx.strokeStyle = INK.cream; ctx.lineWidth = l.pending ? 1 : 1.6; ctx.globalAlpha *= l.pending ? 0.28 : 0.62; ctx.setLineDash(l.pending ? [4, 5] : []); }
+        else { ctx.strokeStyle = BRAND.amber; ctx.lineWidth = 0.7 + l.w * 0.6; ctx.globalAlpha *= 0.16; ctx.setLineDash([]); }
         ctx.beginPath(); ctx.moveTo(l.source.dx, l.source.dy); ctx.lineTo(l.target.dx, l.target.dy); ctx.stroke();
       }
       ctx.setLineDash([]);
@@ -276,9 +270,9 @@ export function NetworkPage({ client, flash }) {
         ctx.fillStyle = "#fff"; ctx.fillText(n.emoji, n.dx, n.dy + s * 0.02);
         if (Ly.labels || F === n || nb.has(n.id)) {
           ctx.font = `600 ${13 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.textBaseline = "top";
-          ctx.lineWidth = 4 / Math.sqrt(k); ctx.strokeStyle = "rgba(21,15,12,.85)"; ctx.lineJoin = "round";
+          ctx.lineWidth = 4 / Math.sqrt(k); ctx.strokeStyle = INK.halo; ctx.lineJoin = "round";
           const label = n.name, my = n.dy + s / 2 + 7;
-          ctx.strokeText(label, n.dx, my); ctx.fillStyle = "#fbf6f0"; ctx.fillText(label, n.dx, my);
+          ctx.strokeText(label, n.dx, my); ctx.fillStyle = INK.text; ctx.fillText(label, n.dx, my);
           ctx.font = `500 ${11 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.fillStyle = "rgba(251,246,240,.62)";
           const mc = g.links.filter((l) => l.kind === "m" && l.target === n && visL(l)).length;
           ctx.strokeText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.dx, my + 16 / Math.sqrt(k)); ctx.fillText(`${mc} member${mc === 1 ? "" : "s"} · ${cityName(n.city)}`, n.dx, my + 16 / Math.sqrt(k));
@@ -296,12 +290,12 @@ export function NetworkPage({ client, flash }) {
         const im = avatarImg(n.ref);
         ctx.save(); ctx.beginPath(); ctx.arc(n.dx, n.dy, r, 0, Math.PI * 2); ctx.clip();
         if (im) ctx.drawImage(im, n.dx - r, n.dy - r, r * 2, r * 2);
-        else { ctx.fillStyle = "#3a2f29"; ctx.fillRect(n.dx - r, n.dy - r, r * 2, r * 2); ctx.fillStyle = "#fbf6f0"; ctx.font = `600 ${Math.max(7, r * 0.85)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials(n.name), n.dx, n.dy + r * 0.05); }
+        else { ctx.fillStyle = INK.surface; ctx.fillRect(n.dx - r, n.dy - r, r * 2, r * 2); ctx.fillStyle = INK.text; ctx.font = `600 ${Math.max(7, r * 0.85)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials(n.name), n.dx, n.dy + r * 0.05); }
         ctx.restore();
         if ((showNames || hi || (F && nb.has(n.id))) && !dim(n)) {
           ctx.font = `500 ${11 / Math.sqrt(k)}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "top";
-          ctx.lineWidth = 3.5 / Math.sqrt(k); ctx.strokeStyle = "rgba(21,15,12,.85)"; ctx.lineJoin = "round";
-          ctx.strokeText(n.name, n.dx, n.dy + r + 5); ctx.fillStyle = "#fbf6f0"; ctx.fillText(n.name, n.dx, n.dy + r + 5);
+          ctx.lineWidth = 3.5 / Math.sqrt(k); ctx.strokeStyle = INK.halo; ctx.lineJoin = "round";
+          ctx.strokeText(n.name, n.dx, n.dy + r + 5); ctx.fillStyle = INK.text; ctx.fillText(n.name, n.dx, n.dy + r + 5);
         }
       }
       ctx.globalAlpha = 1;
@@ -403,8 +397,8 @@ export function NetworkPage({ client, flash }) {
   const toggle = (k) => setLayers((l) => ({ ...l, [k]: !l[k] }));
   const F = focus && g ? g.byId.get(focus) : null;
 
-  if (err) return html`<div class="empty">Couldn't load the network: ${err}</div>`;
-  return html`<div class="net" ref=${wrap}>
+  if (err) return html`<${LoadError} what="the network" error=${err} onRetry=${reload} />`;
+  return html`<div class="net stage-dark" ref=${wrap}>
     <canvas ref=${canvas} onPointerDown=${onDown} onPointerMove=${onMove} onPointerUp=${onUp} onPointerCancel=${onUp} onWheel=${onWheel}
       onPointerLeave=${() => { hoverRef.current = null; setHover(null); }} />
     ${!g && html`<div class="net-loading">Mapping the network…</div>`}
@@ -417,9 +411,9 @@ export function NetworkPage({ client, flash }) {
         ${matches.length > 0 && html`<div class="net-matches">${matches.map((m) => html`<button onClick=${() => { goTo(m.id); setQ(""); }}>${m.kind === "c" ? m.emoji + " " : ""}${m.name}<span>${m.kind === "c" ? "community" : cityName(m.city)}</span></button>`)}</div>`}
       </div>
       <div class="net-chips">
-        <button class=${layers.m ? "on" : ""} onClick=${() => toggle("m")}><i style="background:#8b6cf0"></i>Memberships</button>
-        <button class=${layers.x ? "on" : ""} onClick=${() => toggle("x")}><i style="background:#f6ecdf"></i>Circles</button>
-        <button class=${layers.e ? "on" : ""} onClick=${() => toggle("e")}><i style="background:#f0a830"></i>Went together</button>
+        <button class=${layers.m ? "on" : ""} aria-pressed=${layers.m} onClick=${() => toggle("m")}><i style=${`background:${BRAND.purple}`}></i>Memberships</button>
+        <button class=${layers.x ? "on" : ""} aria-pressed=${layers.x} onClick=${() => toggle("x")}><i style=${`background:${INK.cream}`}></i>Circles</button>
+        <button class=${layers.e ? "on" : ""} aria-pressed=${layers.e} onClick=${() => toggle("e")}><i style=${`background:${BRAND.amber}`}></i>Went together</button>
         <button class=${layers.pending ? "on" : ""} onClick=${() => toggle("pending")}><i class="dash"></i>Pending</button>
         <span class="sep"></span>
         <button class=${colorBy === "community" ? "on" : ""} onClick=${() => setColorBy("community")}>By community</button>
@@ -440,8 +434,8 @@ export function NetworkPage({ client, flash }) {
 
     ${g && ins && html`<aside class="net-rail">
       ${F ? html`<div class="net-card net-focus">
-          <button class="x" onClick=${() => setFocus(null)}>✕</button>
-          <div class="who"><span class="sq" style=${`background:${colorBy === "city" ? (CITY_COLOR[F.city] || "#9a8f86") : F.color}`}>${F.kind === "c" ? F.emoji : initials(F.name)}</span>
+          <button class="x" aria-label="Clear focus" onClick=${() => setFocus(null)}>✕</button>
+          <div class="who"><span class="sq" style=${`background:${colorBy === "city" ? cityColor(F.city) : F.color}`}>${F.kind === "c" ? F.emoji : initials(F.name)}</span>
             <div><b>${F.name}</b><div class="tiny">${F.kind === "c" ? `community · ${cityName(F.city)}` : `${cityName(F.city)} · joined ${fmtDate(F.t0)}`}</div></div></div>
           ${F.kind === "p" ? html`<div class="kv"><span>Communities</span><b>${ins.commsOf.get(F.id)?.size || 0}</b></div>
             <div class="kv"><span>Circle</span><b>${ins.deg.get(F.id) || 0} people</b></div>
@@ -497,7 +491,7 @@ export function NetworkPage({ client, flash }) {
 
       <div class="net-card">
         <div class="net-h">Cities</div>
-        ${Object.entries(ins.cities).sort((a, b) => b[1] - a[1]).map(([c, n]) => html`<div class="kv"><span><i class="dot" style=${`background:${CITY_COLOR[c] || "#9a8f86"}`}></i>${cityName(c)}</span><b>${n} <span class="tiny muted">${pct(n, ins.people)}</span></b></div>`)}
+        ${Object.entries(ins.cities).sort((a, b) => b[1] - a[1]).map(([c, n]) => html`<div class="kv"><span><i class="dot" style=${`background:${cityColor(c)}`}></i>${cityName(c)}</span><b>${n} <span class="tiny muted">${pct(n, ins.people)}</span></b></div>`)}
       </div>
     </aside>`}
 
@@ -505,14 +499,14 @@ export function NetworkPage({ client, flash }) {
       <button class="play" onClick=${() => setPlaying((p) => !p)} title=${playing ? "Pause" : "Replay the growth"}>${playing ? "❚❚" : "▶"}</button>
       <div class="track">
         <svg viewBox=${`0 0 ${series.weeks - 1} 40`} preserveAspectRatio="none">
-          <path d=${areaPath(series.M, 40)} fill="#8b6cf0" opacity=".35" />
-          <path d=${areaPath(series.X, 40)} fill="#f6ecdf" opacity=".35" />
-          <path d=${areaPath(series.P, 40)} fill="#e85d75" opacity=".55" />
+          <path d=${areaPath(series.M, 40)} fill=${BRAND.purple} opacity=".35" />
+          <path d=${areaPath(series.X, 40)} fill=${INK.cream} opacity=".35" />
+          <path d=${areaPath(series.P, 40)} fill=${BRAND.rose} opacity=".55" />
         </svg>
         <input type="range" min=${g.tMin} max=${g.tMax} step=${DAY / 4} value=${t} onInput=${(e) => { setPlaying(false); scrub(e.target.value); }} />
         <div class="ticks"><span>${fmtDate(g.tMin)}</span><span class="now">${fmtDate(t)}</span><span>today</span></div>
       </div>
-      <div class="legend"><i style="background:#e85d75"></i>people <i style="background:#f6ecdf"></i>circles <i style="background:#8b6cf0"></i>memberships</div>
+      <div class="legend"><i style=${`background:${BRAND.rose}`}></i>people <i style=${`background:${INK.cream}`}></i>circles <i style=${`background:${BRAND.purple}`}></i>memberships</div>
     </div>`}
 
     ${hover && !drag.current && html`<div class="net-tip" style=${`left:${hover.x + 14}px;top:${hover.y + 14}px`}>
@@ -525,7 +519,6 @@ export function NetworkPage({ client, flash }) {
   </div>`;
 }
 
-const avatarSrc = (p) => (p.avatar_url.startsWith("http") ? p.avatar_url : `${window.CA_CONFIG?.SUPABASE_URL || ""}/storage/v1/object/public/avatars/${p.avatar_url}`);
 function areaPath(arr, h) {
   const max = Math.max(1, ...arr), n = arr.length;
   let d = `M0 ${h}`;
