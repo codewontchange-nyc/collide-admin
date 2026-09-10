@@ -23,7 +23,7 @@ export function ScoutPage({ client, communities, isOwner, session, flash, sub, g
     actions=${html`<select class="commselect" value=${city} onChange=${(e) => pickCity(e.target.value)} title="Which city's feed">
       ${CITIES.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>`}>
     <${Tabs} page="scout" current=${tab} go=${go} />
-    ${tab === "paste" ? html`<${PasteTab} ...${ctx} />` : html`<${FindTab} ...${ctx} />`}
+    ${tab === "paste" ? html`<${PasteTab} ...${ctx} />` : tab === "sources" ? html`<${SourcesTab} ...${ctx} />` : html`<${FindTab} ...${ctx} />`}
   </${Page}>`;
 }
 
@@ -129,8 +129,9 @@ function ItemCard({ r, byId, selected, onToggle, onSave, onDismiss, onRestore, o
 }
 
 /* ---------- paste a link ---------- */
-function PasteTab({ client, flash, city, isOwner, go, communities }) {
+function PasteTab({ client, flash, city, isOwner, go, communities, session }) {
   const [ingesting, setIngesting] = useState(null);
+  const [watch, setWatch] = useState(null);   // url → AddSourceModal
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState(null);   // { items, method, error, partial }
@@ -156,8 +157,9 @@ function PasteTab({ client, flash, city, isOwner, go, communities }) {
     ${res && !res.error && html`<div class="u-mt-1">
       <div class="tiny muted" style="margin-bottom:8px">Read from ${METHOD[res.method] || res.method}${res.method !== "claude" && res.method !== "claude+og" ? html` · <button class="btn link tiny" onClick=${() => run(true)}>re-read with Claude</button>` : ""}</div>
       ${res.items.length === 0 ? html`<${Empty}>No upcoming events on that page.</${Empty}>` : res.items.map((r) => html`<${PreviewCard} key=${r.id} r=${r} client=${client} flash=${flash} onIngest=${isOwner && r.status !== "ingested" ? () => setIngesting([r]) : null} />`)}
-      <p class="tiny muted u-mt-1">It's in the <button class="btn link tiny" onClick=${() => go("scout")}>feed</button> now.</p>
+      <p class="tiny muted u-mt-1">It's in the <button class="btn link tiny" onClick=${() => go("scout")}>feed</button> now.${res.items.length > 1 ? html` Lists like this can be <button class="btn link tiny" onClick=${() => setWatch(url.trim())}>watched as a source</button>.` : ""}</p>
     </div>`}
+    ${watch && html`<${SourceModal} client=${client} city=${city} communities=${communities} session=${session} flash=${flash} initial=${{ url: watch }} onClose=${() => setWatch(null)} onSaved=${() => { setWatch(null); go("scout/sources"); }} />`}
     ${ingesting && html`<${IngestModal} client=${client} items=${ingesting} communities=${communities} flash=${flash} go=${go}
       onClose=${() => setIngesting(null)} onDone=${() => { setIngesting(null); run(false); }} />`}
   </div>`;
@@ -212,7 +214,8 @@ function IngestModal({ client, items, communities, flash, go, onClose, onDone })
       if (!live) return;
       if (r.error) { setPre({ error: r.error }); return; }
       setPre(r.data);
-      setF((p) => ({ ...p, category: r.data.row.category, x: r.data.place?.x ?? null, y: r.data.place?.y ?? null }));
+      const d = r.data.defaults || {};   // the source's suggestions win over the guess
+      setF((p) => ({ ...p, category: d.category || r.data.row.category, community_id: d.community_id || "", x: r.data.place?.x ?? null, y: r.data.place?.y ?? null }));
     });
     return () => { live = false; };
   }, [item.id]);
@@ -282,5 +285,137 @@ function IngestModal({ client, items, communities, flash, go, onClose, onDone })
           <button type="button" class="btn" disabled=${!canGo} title=${needsPin && f.x == null ? "Click the map to place it first" : ""} onClick=${publish}>${busy ? "Publishing…" : "Publish to the app"}</button>
         </div>
       </div>`}
+  </${Modal}>`;
+}
+
+/* ---------- sources: the watch list ----------
+   iCal feeds, RSS and listing pages that carry event data are re-read on a
+   schedule (a pg_cron tick calls the function every 3 hours; "Refresh now"
+   does the same by hand). Items they find land in the feed with source_id. */
+const KIND_LABEL = { ics: "calendar", rss: "feed", jsonld_page: "listing" };
+const INTERVALS = [[60, "hourly"], [180, "every 3h"], [360, "every 6h"], [1440, "daily"]];
+function SourcesTab({ client, city, communities, session, isOwner, flash }) {
+  const [modal, setModal] = useState(null);   // "new" | source row
+  const [busy, setBusy] = useState(null);     // source id being refreshed, or "all"
+  const { data: rows, error, reload, setData } = useLoader(() => client.from("scout_sources").select("*").eq("city", city).order("created_at"),
+    [client, city], { flash, where: "Sources", client, realtime: [{ table: "scout_sources", filter: `city=eq.${city}` }] });
+  const { data: runs, reload: reloadRuns } = useLoader(async () => {
+    const ids = (rows || []).map((r) => r.id); if (!ids.length) return { data: [] };
+    return client.from("scout_runs").select("id,kind,source_id,started_at,finished_at,found,error,by").in("source_id", ids).order("started_at", { ascending: false }).limit(20);
+  }, [client, rows], { flash: null, where: "Sources" });
+  const { data: fromSources } = useLoader(() => countOf(client, "scout_items", (x) => x.eq("city", city).not("source_id", "is", null).in("status", ["new", "saved"])).then((r) => ({ data: [r.count], error: r.error })), [client, city, rows], { flash: null, where: "Sources" });
+
+  const refresh = async (id) => {
+    setBusy(id || "all");
+    const r = await callFn(client, "scout", id ? { mode: "refresh", source_id: id } : { mode: "refresh", limit: 10 });
+    setBusy(null);
+    if (r.error) { showError(flash, "Refresh", r.error); return; }
+    const res = r.data.results || [];
+    const found = res.reduce((n, x) => n + (x.count || 0), 0), bad = res.filter((x) => x.error);
+    flash(res.length === 0 ? "Nothing was due — every source ran recently" : `${res.length} source${res.length === 1 ? "" : "s"} read · ${found} event${found === 1 ? "" : "s"}${bad.length ? ` · ${bad.length} failed` : ""}`);
+    reload(); reloadRuns();
+  };
+  const patch = async (r, p, msg) => {
+    const { error: e } = await client.from("scout_sources").update(p).eq("id", r.id);
+    if (e) { showError(flash, "Source", e); return; }
+    setData((rs) => rs.map((x) => (x.id === r.id ? { ...x, ...p } : x))); if (msg) flash(msg);
+  };
+  const remove = async (r) => {
+    if (!confirmDanger(`Stop watching “${r.label}”? Events it already found stay in the feed.`)) return;
+    const { error: e, count } = await client.from("scout_sources").delete({ count: "exact" }).eq("id", r.id);
+    if (e || !count) { showError(flash, "Delete", e || "Only owners can remove a source"); return; }
+    setData((rs) => rs.filter((x) => x.id !== r.id)); flash("Source removed");
+  };
+  const loading = rows === null;
+  const byId = new Map((rows || []).map((r) => [r.id, r]));
+  const tone = (r) => !r.enabled ? "neutral" : r.last_error ? "bad" : r.last_ok_at ? "ok" : "warn";
+  const state = (r) => !r.enabled ? "paused" : r.last_error ? "error" : r.last_ok_at ? "watching" : "not yet run";
+
+  return html`<div>
+    <${Metrics} size="sm" loading=${loading} items=${[
+      ["watching", (rows || []).filter((r) => r.enabled).length], ["paused", (rows || []).filter((r) => !r.enabled).length],
+      ["with errors", (rows || []).filter((r) => r.enabled && r.last_error).length], ["events in the feed", fromSources ? fromSources[0] : "…"],
+    ]} />
+    <div class="u-row u-wrap" style="margin-bottom:12px">
+      <span class="tiny muted">Sources are re-read every 3 hours on their own.</span>
+      <div class="u-grow"></div>
+      <button class="btn sm ghost" disabled=${busy} onClick=${() => refresh(null)}>${busy === "all" ? "Reading…" : "Refresh what's due now"}</button>
+      <button class="btn sm" onClick=${() => setModal("new")}>+ Add a source</button>
+    </div>
+    ${error ? html`<${LoadError} what="sources" error=${error} onRetry=${reload} />`
+      : loading ? html`<${Loading} label="Loading sources…" />`
+      : rows.length === 0 ? html`<${Empty}>Nothing watched in ${cityName(city)} yet. Add a Luma calendar, an Eventbrite listing page, a venue's iCal or an RSS feed.</${Empty}>`
+      : html`<table class="table"><thead><tr><th>Source</th><th>Kind</th><th>Cadence</th><th>Last read</th><th>Found</th><th>Status</th><th></th></tr></thead><tbody>
+        ${rows.map((r) => html`<tr key=${r.id} class=${r.enabled ? "" : "off"}>
+          <td><b>${r.label}</b><div class="tiny muted"><a href=${r.url} target="_blank" rel="noopener">${host(r.url)}</a>${r.default_community_id ? " · → " + (communities.find((c) => c.id === r.default_community_id)?.name || "community") : ""}${r.notes ? " · " + r.notes : ""}</div></td>
+          <td><${Pill} tone="neutral" sm>${KIND_LABEL[r.kind] || r.kind}</${Pill}></td>
+          <td class="tiny">${(INTERVALS.find(([m]) => m === r.interval_minutes) || [0, `every ${r.interval_minutes}m`])[1]}</td>
+          <td class="tiny" title=${r.last_run_at || ""}>${r.last_run_at ? ago(r.last_run_at) : "never"}</td>
+          <td class="tiny">${r.last_count ?? "—"}</td>
+          <td><${Pill} tone=${tone(r)} sm title=${r.last_error || ""}>${state(r)}</${Pill}>${r.last_error && html`<div class="tiny tone-bad u-ellipsis" style="max-width:220px" title=${r.last_error}>${r.last_error}</div>`}</td>
+          <td><div class="u-row" style="justify-content:flex-end">
+            <button class="btn sm ghost" disabled=${busy} onClick=${() => refresh(r.id)}>${busy === r.id ? "Reading…" : "Refresh"}</button>
+            <button class="btn sm ghost" onClick=${() => patch(r, { enabled: !r.enabled }, r.enabled ? "Paused" : "Watching again")}>${r.enabled ? "Pause" : "Resume"}</button>
+            <button class="btn sm ghost" onClick=${() => setModal(r)}>Edit</button>
+            ${isOwner && html`<button class="btn sm danger" onClick=${() => remove(r)}>Remove</button>`}
+          </div></td>
+        </tr>`)}
+      </tbody></table>`}
+    ${runs && runs.length > 0 && html`<details class="u-mt-2"><summary class="tiny muted">Last ${runs.length} reads</summary>
+      <table class="table u-mt-1"><thead><tr><th>When</th><th>Source</th><th>Found</th><th>By</th><th>Result</th></tr></thead><tbody>
+        ${runs.map((x) => html`<tr key=${x.id}><td class="tiny">${ago(x.started_at)}</td><td class="tiny">${byId.get(x.source_id)?.label || "—"}</td><td class="tiny">${x.found ?? "—"}</td><td class="tiny">${x.by ? "staff" : "schedule"}</td><td class="tiny ${x.error ? "tone-bad" : ""}">${x.error || (x.finished_at ? "ok" : "running…")}</td></tr>`)}
+      </tbody></table></details>`}
+    ${modal && html`<${SourceModal} client=${client} city=${city} communities=${communities} session=${session} flash=${flash} initial=${modal === "new" ? null : modal}
+      onClose=${() => setModal(null)} onSaved=${(r, isNew) => { setModal(null); reload(); if (isNew) refresh(r.id); }} />`}
+  </div>`;
+}
+
+// add / edit a source: the URL is probed first so the kind is never guessed
+function SourceModal({ client, city, communities, session, flash, initial, onClose, onSaved }) {
+  const editing = !!(initial && initial.id);
+  const [f, setF] = useState({ url: initial?.url || "", label: initial?.label || "", kind: initial?.kind || "", interval_minutes: initial?.interval_minutes || 180,
+    default_category: initial?.default_category || "", default_community_id: initial?.default_community_id || "", notes: initial?.notes || "" });
+  const [probe, setProbe] = useState(editing ? { kind: initial.kind } : null);
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const check = async () => {
+    const u = f.url.trim(); if (!/^https?:\/\/\S+$/i.test(u)) { setProbe({ kind: "unknown", error: "Paste a full link (https://…)" }); return; }
+    setBusy(true); setProbe(null);
+    const r = await callFn(client, "scout", { mode: "probe", url: u });
+    setBusy(false);
+    if (r.error) { setProbe({ kind: "unknown", error: r.error }); return; }
+    setProbe(r.data);
+    if (KIND_LABEL[r.data.kind]) setF((p) => ({ ...p, kind: r.data.kind, url: r.data.url || p.url, label: p.label || r.data.label || host(r.data.url || p.url) }));
+  };
+  useEffect(() => { if (!editing && f.url && initial?.url) check(); }, []);   // prefilled from Paste → probe at once
+  const ok = KIND_LABEL[f.kind] && f.url.trim() && f.label.trim();
+  const save = async () => {
+    setBusy(true);
+    const row = { city, url: f.url.trim(), label: f.label.trim(), kind: f.kind, interval_minutes: Number(f.interval_minutes), default_category: f.default_category || null,
+      default_community_id: f.default_community_id || null, notes: f.notes.trim() || null };
+    const q = editing ? client.from("scout_sources").update(row).eq("id", initial.id).select("*").single()
+      : client.from("scout_sources").insert({ ...row, created_by: session?.user?.id || null }).select("*").single();
+    const { data, error } = await q;
+    setBusy(false);
+    if (error) { showError(flash, "Source", /duplicate|unique/i.test(error.message) ? "That link is already being watched" : error); return; }
+    flash(editing ? "Saved ✓" : "Watching — reading it now…"); onSaved(data, !editing);
+  };
+  return html`<${Modal} title=${editing ? "Edit source" : "Watch a source"} width=${560} onClose=${onClose}>
+    <div class="field"><label>Link</label>
+      <div class="u-row"><input class="u-grow" value=${f.url} onInput=${set("url")} placeholder="https://lu.ma/… · an .ics link · an RSS feed · an Eventbrite listing" onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); check(); } }} />
+        <button type="button" class="btn sm ghost" disabled=${busy || !f.url.trim()} onClick=${check}>${busy && !probe ? "Checking…" : "Check"}</button></div>
+      ${probe && html`<div class="tiny u-mt-1 ${KIND_LABEL[probe.kind] ? "tone-ok" : "tone-warn"}">${KIND_LABEL[probe.kind] ? `✓ ${KIND_LABEL[probe.kind] === "listing" ? `A listing page with ${probe.events} events` : KIND_LABEL[probe.kind] === "calendar" ? "An iCal calendar" : "An RSS feed"}` : probe.kind === "single_event" ? "That's a single event — paste it on the Paste tab instead." : probe.error ? `Couldn't read it: ${probe.error}` : "No event data found on that page."}</div>`}
+    </div>
+    <div class="fieldrow">
+      <div class="field u-grow"><label>Name</label><input value=${f.label} onInput=${set("label")} placeholder="NYC Parks · Luma NYC" /></div>
+      <div class="field"><label>Read</label><select value=${f.interval_minutes} onChange=${set("interval_minutes")}>${INTERVALS.map(([m, l]) => html`<option value=${m}>${l}</option>`)}</select></div>
+    </div>
+    <div class="field"><label>Suggested community <span class="muted">(optional — picks from this source default to it when ingested)</span></label>
+      <select value=${f.default_community_id} onChange=${set("default_community_id")}><option value="">— none, city-wide —</option>${communities.filter((c) => !c.archived_at && (c.city === city || c.city === "global")).map((c) => html`<option value=${c.id}>${c.emoji || ""} ${c.name}</option>`)}</select></div>
+    <div class="field"><label>Notes</label><input value=${f.notes} onInput=${set("notes")} placeholder="why we watch it, who runs it" /></div>
+    <div class="actions">
+      <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
+      <button type="button" class="btn" disabled=${!ok || busy} title=${!KIND_LABEL[f.kind] ? "Check the link first" : ""} onClick=${save}>${editing ? "Save" : "Watch it"}</button>
+    </div>
   </${Modal}>`;
 }

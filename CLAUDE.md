@@ -45,7 +45,7 @@ lists for member-data tables.
 ## Edge functions
 
 `supabase/functions/`: `crm-tick`, `ics`, `invite`, `moderate`, `push-send`,
-`share`. Deploy one at a time:
+`scout`, `share`. Deploy one at a time:
 `supabase functions deploy <name> --no-verify-jwt --project-ref pjxvvwcnjjizdtiutpxd`
 then smoke it. The app repo owns `inkify`, `nav`, `qr`, `recap` in the same
 project — one namespace, one secret store.
@@ -59,7 +59,8 @@ auth user `picks@collide.city`, an owner staff key), plus `ANTHROPIC_API_KEY` an
 The VAPID public key is mirrored in `app.js`; change both or push breaks.
 
 Scout (`scout` function + `scout.js`): staff paste links / watch iCal, RSS and
-JSON-LD listing pages; owners ingest. City-wide picks are only visible in the
+JSON-LD listing pages (pg_cron `scout-refresh` every 3 h, 10 due sources per
+tick); owners ingest. City-wide picks are only visible in the
 app once they have a map pin, so ingest refuses `unplaced` — never create a
 city-wide activity without a `map_events` row.
 

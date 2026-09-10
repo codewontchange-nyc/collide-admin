@@ -17,6 +17,7 @@ import { fetchText } from "./lib/fetch.ts";
 import { upsertItems, cachedRun, runStart, runEnd } from "./lib/store.ts";
 import { itemsFromJsonLd, ogFallback, claudeExtract, jsonLdEvents, jsonLdBlocks } from "./adapters/generic.ts";
 import { parseIcs, looksLikeIcs } from "./adapters/ics.ts";
+import { parseRss } from "./adapters/rss.ts";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const admin = createClient(URL_, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -125,8 +126,11 @@ async function refresh({ sourceId = null as string | null, limit = 10, by = null
         count = r.items.length;
       } else if (s.kind === "rss") {
         const page = await fetchText(s.url, { maxBytes: 8_000_000 }); if (!page.ok) throw new Error(`fetch_${page.status}`);
-        const links = [...page.text.matchAll(/<link[^>]*>([^<]+)<\/link>|<link[^>]+href=["']([^"']+)["'][^>]*\/?>|<guid[^>]*>(https?:[^<]+)<\/guid>/gi)]
-          .map((m) => (m[1] || m[2] || m[3] || "").trim()).filter((u) => /^https?:\/\//.test(u) && u !== s.url);
+        // entries that carry the event themselves land directly; the rest are read the cheap way
+        const entries = parseRss(page.text, city, s.url);
+        const direct = entries.filter((e) => e.item).map((e) => e.item!);
+        if (direct.length) count += (await upsertItems(admin, city.code, direct, s.id)).length;
+        const links = entries.filter((e) => !e.item).map((e) => e.link).filter((u) => u !== s.url);
         for (const u of [...new Set(links)].slice(0, 20)) {
           if (Date.now() > deadline) break;
           try { const r = await extract(u, city, { by, sourceId: s.id, allowAi: false }); count += r.items.length; } catch { /* one bad link doesn't sink the feed */ }
@@ -198,7 +202,10 @@ async function ingest(b: Record<string, unknown>, me: Caller) {
   // soft warning: a hand-made event that looks like the same thing
   const words = norm(item.title).slice(0, 3).join(" ");
   const { data: similar } = words ? await admin.from("activities").select("id,title").eq("city", item.city).eq("date", date).ilike("title", `%${words}%`).limit(3) : { data: [] };
-  if (b.dry) return { row, place, warnings: (similar || []).map((a) => ({ activity_id: a.id, title: a.title })), item };
+  if (b.dry) {
+    const { data: src } = item.source_id ? await admin.from("scout_sources").select("label,default_category,default_community_id").eq("id", item.source_id).maybeSingle() : { data: null };
+    return { row, place, warnings: (similar || []).map((a) => ({ activity_id: a.id, title: a.title })), item, defaults: src ? { label: src.label, category: src.default_category, community_id: src.default_community_id } : null };
+  }
 
   if (!community_id && !place) return { error: "unplaced", place: null };
   if (b.use_image !== false && item.image_url) row.image_path = await copyImage(admin, item.image_url, item.id);
