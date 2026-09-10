@@ -52,8 +52,16 @@ project — one namespace, one secret store.
 
 Secrets used: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `PUSH_WEBHOOK_SECRET` (and the legacy
-`PUSH_SECRET` alias `push-send` still accepts until the DB webhook is re-pointed).
+`PUSH_SECRET` alias `push-send` still accepts until the DB webhook is re-pointed),
+`SCOUT_HOST_PROFILE_ID` (the "Collide" house profile that hosts ingested picks —
+auth user `picks@collide.city`, an owner staff key), plus `ANTHROPIC_API_KEY` and
+`GOOGLE_MAPS_KEY` shared with the app's functions (`scout` uses both).
 The VAPID public key is mirrored in `app.js`; change both or push breaks.
+
+Scout (`scout` function + `scout.js`): staff paste links / watch iCal, RSS and
+JSON-LD listing pages; owners ingest. City-wide picks are only visible in the
+app once they have a map pin, so ingest refuses `unplaced` — never create a
+city-wide activity without a `map_events` row.
 
 ## Verifying in a browser
 
