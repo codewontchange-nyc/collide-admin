@@ -16,6 +16,7 @@ import { ModerationPage } from "./moderation.js?v=__V__";
 import { CanvasPage } from "./canvasflow.js?v=__V__";
 import { NetworkPage } from "./network.js?v=__V__";
 import { BillingPage } from "./billing.js?v=__V__";
+import { ScoutPage } from "./scout.js?v=__V__";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -71,7 +72,7 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    and owner gating live in routes.js; this is just which component draws each. */
 const VIEW = {
   overview: Overview, dashboard: Dashboard, map: SharedMap, network: NetworkPage, upnext: UpNextPage,
-  canvas: CanvasPage, data: DataPage, crm: CRMPage, billing: BillingPage, mod: ModerationPage, ads: AdsPage, issues: IssuesPage,
+  canvas: CanvasPage, data: DataPage, crm: CRMPage, billing: BillingPage, scout: ScoutPage, mod: ModerationPage, ads: AdsPage, issues: IssuesPage,
 };
 
 /* ---- web push: the console is itself a push client ---- */

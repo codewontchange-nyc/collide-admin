@@ -709,3 +709,13 @@ h2 .sub { font: 400 13px var(--body); color: var(--muted); margin-left: 6px; }
 .stops-list li.on .stop-n { border-style: solid; border-color: #2b2722; color: #2b2722; background: #f7f2ea; }
 .stops-list .stop-t { font-weight: 600; }
 @media (max-width: 900px) { .stops-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Scout ---------- */
+.scout-card { position: relative; }
+.scout-card.selected { outline: 2px solid var(--brand); }
+.scout-card.off { opacity: .6; }
+.scout-check { width: 16px; height: 16px; accent-color: var(--brand); flex: none; }
+.scout-card .thumb { width: 96px; height: 64px; }
+.scout-preview { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.scout-preview img { width: 180px; height: 120px; object-fit: cover; border-radius: var(--r-sm); flex: none; }
+.scout-preview .field { margin-bottom: 8px; }

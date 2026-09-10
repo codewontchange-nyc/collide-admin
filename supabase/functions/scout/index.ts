@@ -1,0 +1,201 @@
+// scout — find events out there, bring them in here.
+//
+// POST { mode, ... }   (staff JWT; `refresh` also accepts x-push-secret for cron)
+//   extract { url, city, ai?, force? }   → one public page → normalized item(s) in the feed
+//   probe   { url }                      → what kind of watch source this URL would be
+//   search  { city, from, to, q?, status? } → the feed (no network — sources fill it)
+//   refresh { source_id?, limit? }       → pull due watch sources; expire stale items
+//   ingest  { item_id, ... , dry? }      → owners only: publish a pick (see S2)
+//
+// Deployed with: supabase functions deploy scout --no-verify-jwt --project-ref pjxvvwcnjjizdtiutpxd
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { json, preflight, caller as getCaller, isAnyStaff, isOwner, fail, type Caller } from "../_shared/http.ts";
+import { type CityRow, canonicalUrl, todayIn } from "./lib/item.ts";
+import { fetchText } from "./lib/fetch.ts";
+import { upsertItems, cachedRun, runStart, runEnd } from "./lib/store.ts";
+import { itemsFromJsonLd, ogFallback, claudeExtract, jsonLdEvents, jsonLdBlocks } from "./adapters/generic.ts";
+import { parseIcs, looksLikeIcs } from "./adapters/ics.ts";
+
+const URL_ = Deno.env.get("SUPABASE_URL")!;
+const admin = createClient(URL_, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const CACHE_MIN = 20;
+
+async function cityRow(code: string): Promise<CityRow | null> {
+  const { data } = await admin.from("cities").select("code,name,lat,lng,radius_km,tz").eq("code", code).maybeSingle();
+  return (data as CityRow) || null;
+}
+async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
+  const key = Deno.env.get("GOOGLE_MAPS_KEY_GEO") || Deno.env.get("GOOGLE_MAPS_KEY"); if (!key) return null;
+  try {
+    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address.slice(0, 200))}&key=${key}`, { signal: AbortSignal.timeout(6000) }).then((x) => x.json());
+    const g = r.results?.[0]?.geometry?.location; return g ? { lat: g.lat, lng: g.lng } : null;
+  } catch { return null; }
+}
+
+/* ---------- extract: one URL → item(s) ---------- */
+async function extract(url: string, city: CityRow, { ai = false, force = false, by = null as string | null, sourceId = null as string | null, allowAi = true } = {}) {
+  const canon = canonicalUrl(url);
+  const key = `extract|${canon}`;
+  if (!force && !ai) {
+    const c = await cachedRun(admin, key, CACHE_MIN);
+    if (c) {
+      const { data } = await admin.from("scout_items").select("*").eq("city", city.code).or(`external_id.eq.${canon.replace(/,/g, "%2C")},url.eq.${canon.replace(/,/g, "%2C")}`).order("start_date").limit(50);
+      if (data?.length) return { items: data, method: "cached", cached: true };
+    }
+  }
+  const run = await runStart(admin, key, "extract", sourceId, by);
+  try {
+    const page = await fetchText(url);
+    if (!page.ok) throw new Error(`fetch_${page.status}`);
+    let items = [] as ReturnType<typeof itemsFromJsonLd>; let method = "jsonld";
+    if (looksLikeIcs(page.text, page.contentType)) { items = parseIcs(page.text, city, canon).map((i) => ({ ...i, source: "ics" as const })); method = "ics"; }
+    else {
+      items = itemsFromJsonLd(page.text, page.finalUrl || url, city);
+      if (items.length === 1 && jsonLdEvents(jsonLdBlocks(page.text)).length === 1) items[0].external_id = canon, items[0].url = canon;
+      if (!items.length || ai) {
+        const og = ogFallback(page.text, page.finalUrl || url, city);
+        const today = todayIn(city.tz);
+        let partial = og as typeof og & { not_event?: boolean }; method = "og";
+        if ((!og.start_date || ai) && allowAi) {
+          const cl = await claudeExtract(page.text, url, city, today);
+          if (cl && !cl.not_event) { partial = { ...og, ...cl, image_url: og.image_url ?? null }; method = og.start_date ? "claude+og" : "claude"; }
+          else if (cl?.not_event) { await runEnd(admin, run, { found: 0, error: "not_event" }); return { items: [], method: "claude", error: "not_event" }; }
+        }
+        if (partial.title && partial.start_date) {
+          items = [{ source: "generic", external_id: canon, url: canon, title: partial.title, description: partial.description ?? null,
+            start_date: partial.start_date, start_time: partial.start_time ?? null, starts_at: partial.starts_at ?? null, ends_at: null,
+            venue_name: partial.venue_name ?? null, address: partial.address ?? null, lat: null, lng: null,
+            image_url: partial.image_url ?? null, price_min_cents: partial.price_min_cents ?? null, price_max_cents: partial.price_max_cents ?? null, currency: "USD",
+            organizer_name: partial.organizer_name ?? null, organizer_url: null, categories: partial.categories ?? [], raw: { method } }];
+        } else if (!items.length) { await runEnd(admin, run, { found: 0, error: "no_date" }); return { items: [], method, error: "no_date", partial: { title: partial.title, image_url: partial.image_url } }; }
+      }
+    }
+    // one geocode per item that has an address but no coordinates
+    for (const i of items) if (i.address && (i.lat == null || i.lng == null)) { const g = await geocode(i.address + (i.address.match(/\b(NY|GA|New York|Atlanta)\b/i) ? "" : `, ${city.name}`)); if (g) { i.lat = g.lat; i.lng = g.lng; } }
+    const rows = await upsertItems(admin, city.code, items, sourceId);
+    await runEnd(admin, run, { found: items.length, upserted: rows.length });
+    return { items: rows, method, cached: false };
+  } catch (e) {
+    await runEnd(admin, run, { error: String((e as Error)?.message || e) });
+    throw e;
+  }
+}
+
+/* ---------- probe: what would this URL be on the watch list? ---------- */
+async function probe(url: string) {
+  const page = await fetchText(url, { maxBytes: 8_000_000 });
+  if (!page.ok) return { kind: "unknown", error: `fetch_${page.status}` };
+  if (looksLikeIcs(page.text, page.contentType)) return { kind: "ics", url };
+  if (/^\s*<\?xml[\s\S]{0,300}?<(rss|feed)\b/i.test(page.text) || /<(rss|feed)\b/i.test(page.text.slice(0, 2000)) || /application\/(rss|atom)\+xml/i.test(page.contentType)) return { kind: "rss", url };
+  // Luma calendar page → its subscribe feed
+  const luma = page.text.match(/https?:\/\/api\.lu\.ma\/ics\/get\?entity=calendar&(?:amp;)?id=[a-zA-Z0-9-]+/);
+  if (luma) return { kind: "ics", url: luma[0].replace(/&amp;/g, "&"), label: (page.text.match(/<title[^>]*>([^<]{1,80})/i)?.[1] || "").trim() };
+  const alt = page.text.match(/<link[^>]+type=["']text\/calendar["'][^>]+href=["']([^"']+)["']/i) || page.text.match(/<link[^>]+href=["']([^"']+\.ics[^"']*)["']/i);
+  if (alt) { try { return { kind: "ics", url: new URL(alt[1].replace(/^webcal:/, "https:"), url).toString() }; } catch { /* fallthrough */ } }
+  const rss = page.text.match(/<link[^>]+type=["']application\/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']/i);
+  const n = jsonLdEvents(jsonLdBlocks(page.text)).length;
+  if (n >= 2) return { kind: "jsonld_page", url, events: n };
+  if (rss) { try { return { kind: "rss", url: new URL(rss[1], url).toString() }; } catch { /* fallthrough */ } }
+  return { kind: n === 1 ? "single_event" : "unknown", url, events: n };
+}
+
+/* ---------- refresh: pull due sources ---------- */
+async function refresh({ sourceId = null as string | null, limit = 10, by = null as string | null } = {}) {
+  const deadline = Date.now() + 25_000;
+  let q = admin.from("scout_sources").select("*").eq("enabled", true).order("last_run_at", { ascending: true, nullsFirst: true }).limit(limit);
+  if (sourceId) q = admin.from("scout_sources").select("*").eq("id", sourceId);
+  const { data: sources } = await q;
+  const results: unknown[] = [];
+  for (const s of sources || []) {
+    if (Date.now() > deadline) break;
+    if (!sourceId && s.last_run_at && Date.parse(s.last_run_at) > Date.now() - s.interval_minutes * 60e3) continue;
+    const city = await cityRow(s.city); if (!city) continue;
+    const run = await runStart(admin, `refresh|${s.id}`, "refresh", s.id, by);
+    const stamp = { last_run_at: new Date().toISOString() } as Record<string, unknown>;
+    try {
+      let count = 0;
+      if (s.kind === "ics") {
+        const page = await fetchText(s.url, { maxBytes: 8_000_000 }); if (!page.ok) throw new Error(`fetch_${page.status}`);
+        const items = parseIcs(page.text, city, s.url);
+        count = (await upsertItems(admin, city.code, items, s.id)).length;
+      } else if (s.kind === "jsonld_page") {
+        const r = await extract(s.url, city, { force: true, by, sourceId: s.id, allowAi: false });
+        count = r.items.length;
+      } else if (s.kind === "rss") {
+        const page = await fetchText(s.url, { maxBytes: 8_000_000 }); if (!page.ok) throw new Error(`fetch_${page.status}`);
+        const links = [...page.text.matchAll(/<link[^>]*>([^<]+)<\/link>|<link[^>]+href=["']([^"']+)["'][^>]*\/?>|<guid[^>]*>(https?:[^<]+)<\/guid>/gi)]
+          .map((m) => (m[1] || m[2] || m[3] || "").trim()).filter((u) => /^https?:\/\//.test(u) && u !== s.url);
+        for (const u of [...new Set(links)].slice(0, 20)) {
+          if (Date.now() > deadline) break;
+          try { const r = await extract(u, city, { by, sourceId: s.id, allowAi: false }); count += r.items.length; } catch { /* one bad link doesn't sink the feed */ }
+        }
+      }
+      Object.assign(stamp, { last_ok_at: new Date().toISOString(), last_error: null, last_count: count });
+      await runEnd(admin, run, { found: count, upserted: count });
+      results.push({ source: s.id, label: s.label, count });
+    } catch (e) {
+      const msg = String((e as Error)?.message || e).slice(0, 300);
+      Object.assign(stamp, { last_error: msg });
+      await runEnd(admin, run, { error: msg });
+      results.push({ source: s.id, label: s.label, error: msg });
+    }
+    await admin.from("scout_sources").update(stamp).eq("id", s.id);
+  }
+  // housekeeping: yesterday's items expire; dismissed/expired ones are purged after 30 days
+  const { data: cities } = await admin.from("cities").select("code,tz");
+  for (const c of cities || []) {
+    const y = new Date(Date.parse(todayIn(c.tz) + "T00:00:00Z") - 864e5).toISOString().slice(0, 10);
+    await admin.from("scout_items").update({ status: "expired" }).eq("city", c.code).in("status", ["new", "saved"]).lt("start_date", y);
+  }
+  await admin.from("scout_items").delete().in("status", ["expired", "dismissed"]).lt("updated_at", new Date(Date.now() - 30 * 864e5).toISOString());
+  return { ran: results.length, results };
+}
+
+Deno.serve(async (req) => {
+  const pre = preflight(req); if (pre) return pre;
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  try {
+    const b = await req.json().catch(() => ({}));
+    const mode = String(b.mode || "");
+    // cron path: shared secret, refresh only
+    if (mode === "refresh" && req.headers.get("x-push-secret") && req.headers.get("x-push-secret") === Deno.env.get("PUSH_WEBHOOK_SECRET")) {
+      return json(await refresh({ limit: Number(b.limit) || 10 }));
+    }
+    const me: Caller | null = await getCaller(req);
+    if (!me?.user) return json({ error: "Not signed in" }, 401);
+    if (!(await isAnyStaff(me))) return json({ error: "Staff only" }, 403);
+
+    if (mode === "extract") {
+      const url = String(b.url || "").trim();
+      if (!/^https?:\/\/\S+$/i.test(url)) return json({ error: "Paste a full link (https://…)" }, 400);
+      const city = await cityRow(String(b.city || "nyc")); if (!city) return json({ error: "Unknown city" }, 400);
+      try { return json(await extract(url, city, { ai: !!b.ai, force: !!b.force, by: me.user.id })); }
+      catch (e) { const m = String((e as Error)?.message || e); return json({ error: m.startsWith("fetch_") ? `That page answered ${m.slice(6)}` : m === "too_large" ? "That page is too big to read" : /timeout|abort/i.test(m) ? "That page took too long to answer" : m }, 422); }
+    }
+    if (mode === "probe") {
+      const url = String(b.url || "").trim();
+      if (!/^https?:\/\/\S+$/i.test(url)) return json({ error: "Paste a full link (https://…)" }, 400);
+      try { return json(await probe(url)); } catch (e) { return json({ kind: "unknown", error: String((e as Error)?.message || e) }); }
+    }
+    if (mode === "search") {
+      const city = String(b.city || "nyc"), from = String(b.from || todayIn("America/New_York")), to = String(b.to || "2099-12-31");
+      let q = me.client.from("scout_items").select("*").eq("city", city).gte("start_date", from).lte("start_date", to).order("start_date").order("start_time", { nullsFirst: false }).limit(500);
+      const status = String(b.status || "");
+      if (status === "new") q = q.in("status", ["new", "saved"]); else if (status && status !== "all") q = q.eq("status", status);
+      const kw = String(b.q || "").trim().slice(0, 80);
+      if (kw) q = q.or(`title.ilike.%${kw}%,venue_name.ilike.%${kw}%,organizer_name.ilike.%${kw}%,description.ilike.%${kw}%`);
+      const { data, error } = await q;
+      if (error) return json({ error: error.message }, 400);
+      return json({ items: data || [] });
+    }
+    if (mode === "refresh") {
+      return json(await refresh({ sourceId: b.source_id ? String(b.source_id) : null, limit: Number(b.limit) || 10, by: me.user.id }));
+    }
+    if (mode === "ingest") {
+      if (!(await isOwner(me))) return json({ error: "Owners only" }, 403);
+      return json({ error: "ingest arrives in the next release" }, 501);
+    }
+    return json({ error: "mode" }, 400);
+  } catch (e) { return fail(e); }
+});
