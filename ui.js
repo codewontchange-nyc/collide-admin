@@ -5,7 +5,6 @@ import { storageUrl, BUCKETS, paged } from "./db.js?v=__V__";
 import { PAGE, go as goRoute } from "./routes.js?v=__V__";
 
 export const html = htm.bind(h);
-export { paged as fetchAll };   // older name, same helper
 
 /* ---------- constants ---------- */
 export const DAY = 864e5;
@@ -157,7 +156,7 @@ export const LoadError = ({ what = "this", error, onRetry }) =>
 
 // Page shell: <Page title="Money" sub="every dollar" actions=${html`<button …>`}>…</Page>
 export function Page({ title, sub, actions, card = true, reading, className = "", children }) {
-  const cls = "page" + (card ? " card" : " nocard") + (reading ? " reading" : "") + (className ? " " + className : "");
+  const cls = "page" + (card ? " card" : "") + (reading ? " reading" : "") + (className ? " " + className : "");
   return html`<div class=${cls}>
     ${(title || actions) && html`<div class="pagehead">
       <h2>${title}${sub && html` <span class="sub">${sub}</span>`}</h2>

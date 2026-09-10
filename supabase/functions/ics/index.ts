@@ -11,6 +11,7 @@
 // Deployed with: supabase functions deploy ics --no-verify-jwt --project-ref pjxvvwcnjjizdtiutpxd
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { json, text, preflight } from "../_shared/http.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const APP_URL = "https://codewontchange-nyc.github.io/Collide/";
@@ -45,14 +46,15 @@ const fold = (line: string) => {
 };
 
 Deno.serve(async (req) => {
+  const pre = preflight(req); if (pre) return pre;
   const id = new URL(req.url).searchParams.get("event") || "";
-  if (!/^[0-9a-f-]{36}$/.test(id)) return new Response("bad event id", { status: 400 });
+  if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: "bad event id" }, 400);
 
   const { data: ev } = await admin.from("activities")
     .select("id, title, date, starts_at, at_time, location, place, note, link, city, visibility, expires_at, community_id")
     .eq("id", id).maybeSingle();
-  if (!ev || ev.visibility !== "public") return new Response("not found", { status: 404 });
-  if (!ev.date && ev.expires_at && new Date(ev.expires_at) < new Date()) return new Response("expired", { status: 410 });
+  if (!ev || ev.visibility !== "public") return json({ error: "not found" }, 404);
+  if (!ev.date && ev.expires_at && new Date(ev.expires_at) < new Date()) return json({ error: "expired" }, 410);
 
   let communityName = "Collide";
   if (ev.community_id) {
@@ -86,7 +88,7 @@ Deno.serve(async (req) => {
     const d = ev.date.replace(/-/g, "");
     const next = new Date(new Date(ev.date + "T00:00:00Z").getTime() + 864e5).toISOString().slice(0, 10).replace(/-/g, "");
     when = `DTSTART;VALUE=DATE:${d}\r\nDTEND;VALUE=DATE:${next}`;
-  } else return new Response("event has no date yet", { status: 422 });
+  } else return json({ error: "event has no date yet" }, 422);
 
   const descBits = [ev.note, ev.community_id ? `With ${communityName} on Collide.` : "A Collide plan.", ev.link].filter(Boolean);
   const lines = [
@@ -109,10 +111,8 @@ Deno.serve(async (req) => {
   ];
   const body = lines.join("\r\n") + "\r\n";
   const fname = ((ev.title || "collide-event").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "collide-event") + ".ics";
-  return new Response(body, { headers: {
-    "Content-Type": "text/calendar; charset=utf-8",
+  return text(body, 200, "text/calendar; charset=utf-8", {
     "Content-Disposition": `attachment; filename="${fname}"`,
     "Cache-Control": "public, max-age=300",
-    "Access-Control-Allow-Origin": "*",
-  }});
+  });
 });

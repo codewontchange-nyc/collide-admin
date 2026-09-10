@@ -15,31 +15,22 @@
 // Deployed with: supabase functions deploy moderate --project-ref pjxvvwcnjjizdtiutpxd
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { json, preflight, caller as getCaller, isOwner, fail } from "../_shared/http.ts";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const admin = createClient(URL, SRK);
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-const json = (b: unknown, s = 200) =>
-  new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
-
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const pre = preflight(req); if (pre) return pre;
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
-    // ---- caller must be an owner ----
-    const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    const { data: { user: caller } } = await admin.auth.getUser(jwt);
-    if (!caller?.email) return json({ error: "Not signed in" }, 401);
+    // ---- caller must be an owner (the SQL helper decides, same as RLS) ----
+    const me = await getCaller(req);
+    if (!me?.user.email) return json({ error: "Not signed in" }, 401);
+    if (!(await isOwner(me))) return json({ error: "Owners only" }, 403);
+    const caller = me.user;
     const { data: staff } = await admin.from("staff").select("email, role");
-    const isOwner = (staff || []).some((s) =>
-      s.role === "owner" && s.email?.toLowerCase() === caller.email!.toLowerCase());
-    if (!isOwner) return json({ error: "Owners only" }, 403);
 
     const { action, profile_id = null, email = null, reason = null } = await req.json();
     if (!["ban", "unban", "remove"].includes(action)) return json({ error: "Bad action" }, 400);
@@ -89,6 +80,6 @@ Deno.serve(async (req) => {
     if (delErr) return json({ error: delErr.message }, 400);
     return json({ ok: true, removed: em });
   } catch (e) {
-    return json({ error: String((e as Error)?.message || e) }, 500);
+    return fail(e);
   }
 });

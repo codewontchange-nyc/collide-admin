@@ -73,3 +73,14 @@ then `auth.users`; assert 0 `@collide.test` users and 0 orphan profiles.
 `styles.css` — tokens at the top; no hex in JS outside `BRAND`. `null` means
 "loading" for list state; `flash()` is the toast; errors go through
 `showError()` so they also land in Issues.
+
+## Gates (run before shipping)
+
+```bash
+grep -nE '#[0-9a-fA-F]{6}\b' *.js | grep -v '^ui.js'          # hex lives only in ui.js BRAND
+grep -n 'pillstat\|class="stat\|linkbtn\|btn small' *.js       # retired classes
+grep -n 'location.hash = ' *.js | grep -v routes.js           # navigate through go()
+grep -nE 'from\("(profiles|staff|meals)"\)\.select\("\*"\)' *.js   # column-granted tables use COLS
+grep -rn '?v=[0-9]' *.js index.html                           # never hand-bump; source carries ?v=__V__
+```
+All five should print nothing.

@@ -115,9 +115,9 @@ function PushBell({ session, flash }) {
     } catch (e) { setState("off"); flash(e.message || String(e)); }
   };
   if (state === "checking" || state === "unsupported") return null;
-  return html`<button class="linkbtn" disabled=${state === "busy"} onClick=${toggle}
+  return html`<button class="btn link" disabled=${state === "busy"} onClick=${toggle} aria-label=${state === "on" ? "Push is on — click to turn off" : "Turn on push notifications"}
     title=${state === "on" ? "Push is on — click to turn off" : "Turn on push notifications"}
-    style=${"text-decoration:none;font-size:16px;padding:0;opacity:" + (state === "on" ? "1" : ".4")}>🔔</button>`;
+    style=${"text-decoration:none;font-size:16px;opacity:" + (state === "on" ? "1" : ".4")}>🔔</button>`;
 }
 
 function Login({ onSent, sent, error }) {
@@ -128,7 +128,7 @@ function Login({ onSent, sent, error }) {
   };
   return html`<div class="login">
     <div class="boot-mark"><span class="dot pink"></span><span class="dot teal"></span></div>
-    <h1>collide <span class="muted" style="font:400 18px Inter">admin</span></h1>
+    <h1>collide <span class="muted" style="font:400 18px var(--body)">admin</span></h1>
     <p>The desktop console for community owners and facilitators.</p>
     ${sent
       ? html`<p><b>Check your email 💌</b><br/>Tap the sign-in link we just sent to continue.</p>`
@@ -251,7 +251,7 @@ function App() {
       </div>
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
-      <button class="linkbtn tiny" onClick=${signOut}>sign out</button>
+      <button class="btn link tiny" onClick=${signOut}>sign out</button>
     </div>
     <div class="main">
       ${!canSee(page, isOwner)

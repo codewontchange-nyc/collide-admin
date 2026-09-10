@@ -7,6 +7,7 @@
 // Deployed with: supabase functions deploy share --no-verify-jwt --project-ref pjxvvwcnjjizdtiutpxd
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { json, text, preflight } from "../_shared/http.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const SITE = "https://codewontchange-nyc.github.io/collide-site";
@@ -16,12 +17,13 @@ const FALLBACK_OG = `${SITE}/map.jpg`;
 const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 Deno.serve(async (req) => {
+  const pre = preflight(req); if (pre) return pre;
   const url = new URL(req.url);
   const e = url.searchParams.get("e") || "";
-  if (!/^[0-9a-f-]{36}$/.test(e)) return new Response("bad link", { status: 400 });
+  if (!/^[0-9a-f-]{36}$/.test(e)) return json({ error: "bad link" }, 400);
 
   const { data: p } = await admin.rpc("event_invite_preview", { eid: e });
-  if (!p) return new Response("This plan has wrapped — find the next one on Collide.", { status: 404 });
+  if (!p) return json({ error: "This plan has wrapped — find the next one on Collide." }, 404);
 
   const ev = p.event, going = p.going, comm = p.community;
   const title = ev.title || "A Collide plan";
@@ -54,8 +56,5 @@ Deno.serve(async (req) => {
 </head><body style="font-family:Georgia,serif;background:#fbf6f0;color:#241d1a;text-align:center;padding:60px 20px">
 <p>${esc(title)}</p><p><a href="${esc(landing)}">Continue to the invite →</a></p>
 </body></html>`;
-  return new Response(html, { headers: {
-    "Content-Type": "text/html; charset=utf-8",
-    "Cache-Control": "public, max-age=300",
-  }});
+  return text(html, 200, "text/html; charset=utf-8", { "Cache-Control": "public, max-age=300" });
 });

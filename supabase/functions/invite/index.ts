@@ -14,6 +14,7 @@
 // Deployed with: supabase functions deploy invite --project-ref pjxvvwcnjjizdtiutpxd
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { json, preflight, caller as getCaller, isOwner as ownerCheck, fail } from "../_shared/http.ts";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const admin = createClient(URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -21,26 +22,18 @@ const admin = createClient(URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const ADMIN_URL = "https://codewontchange-nyc.github.io/collide-admin/";
 const APP_URL = "https://codewontchange-nyc.github.io/Collide/";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const pre = preflight(req); if (pre) return pre;
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   try {
     // ---- who's asking ----
-    const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    const { data: { user: caller } } = await admin.auth.getUser(jwt);
-    if (!caller?.email) return json({ error: "Not signed in" }, 401);
+    const me = await getCaller(req);
+    if (!me?.user.email) return json({ error: "Not signed in" }, 401);
+    const caller = me.user;
     const { data: staff } = await admin.from("staff").select("*");
     const mine = (staff || []).filter((s) => s.email?.toLowerCase() === caller.email!.toLowerCase());
     if (!mine.length) return json({ error: "Staff only" }, 403);
-    const isOwner = mine.some((s) => s.role === "owner");
+    const isOwner = await ownerCheck(me);
 
     // ---- what they're asking for ----
     const { email, kind, community_id = null } = await req.json();
@@ -120,6 +113,6 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, emailed, existing: emailed === "magiclink" });
   } catch (e) {
-    return json({ error: String((e as Error)?.message || e) }, 500);
+    return fail(e);
   }
 });
