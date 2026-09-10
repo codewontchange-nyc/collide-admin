@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Tabs, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=__V__";
+import { useLoader, firstError } from "./db.js?v=__V__";
+import { html, Avatar, Tabs, Metrics, Empty, LoadError, money, niceDate, niceTime, mediaUrl, todayStr, monthStartStr, daysAgoStr } from "./ui.js?v=__V__";
 import { PAGE } from "./routes.js?v=__V__";
 import { EventsPage } from "./events.js?v=__V__";
 import { AnnouncementsPage } from "./announcements.js?v=__V__";
@@ -22,7 +23,7 @@ function PhonePreview() {
   const [s, setS] = useState(1);
   useEffect(() => {
     const fit = () => {
-      const avail = window.innerHeight - 150;   // topbar + breathing room
+      const avail = window.innerHeight - 60 - 90;   // --topbar-h + breathing room
       setS(Math.min(1, avail / PHONE_H));
     };
     fit();
@@ -67,45 +68,31 @@ export function Dashboard(props) {
 }
 
 function DashHome({ client, community, flash, go }) {
-  const [members, setMembers] = useState(null);   // null = loading
-  const [events, setEvents] = useState(null);
-  const [pois, setPois] = useState(null);
-  const [ledger, setLedger] = useState(null);
   const [win, setWin] = useState("M");   // D / W / M for the Events & POI tile
+  const { data, error, reload } = useLoader(async () => {
+    const [m, e, p, l] = await Promise.all([
+      client.from("community_members").select("status, joined_at, profile:profiles!community_members_profile_id_fkey(id,display_name,avatar_url)").eq("community_id", community.id),
+      client.from("activities").select("id,title,date,starts_at,location,image_path,expires_at,created_at").eq("community_id", community.id).order("created_at", { ascending: false }).limit(100),
+      client.from("pois").select("id,name,category,image_path,created_at").eq("community_id", community.id).order("created_at", { ascending: false }),
+      client.from("ledger").select("amount_cents, happened_on").eq("community_id", community.id),
+    ]);
+    const err = firstError([m, e, p, l]); if (err) return { error: err };
+    // date-less plans (made from the phone) count as upcoming until they expire
+    const upcoming = (e.data || [])
+      .filter((ev) => ev.date ? ev.date >= todayStr() : !(ev.expires_at && new Date(ev.expires_at).getTime() < Date.now()))
+      .sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1);
+    return { data: { members: m.data || [], events: upcoming, pois: p.data || [], ledger: l.data || [] } };
+  }, [client, community?.id], { flash, where: "Dashboard" });
 
-  useEffect(() => {
-    if (!community) return;
-    let live = true;
-    (async () => {
-      const [m, e, p, l] = await Promise.all([
-        client.from("community_members").select("status, joined_at, profile:profiles!community_members_profile_id_fkey(id,display_name,avatar_url)").eq("community_id", community.id),
-        client.from("activities").select("*").eq("community_id", community.id).order("created_at", { ascending: false }).limit(100),
-        client.from("pois").select("*").eq("community_id", community.id).order("created_at", { ascending: false }),
-        client.from("ledger").select("amount_cents, happened_on").eq("community_id", community.id),
-      ]);
-      if (!live) return;
-      // date-less plans (made from the phone) count as upcoming until they expire
-      const upcoming = (e.data || [])
-        .filter((ev) => ev.date ? ev.date >= todayStr() : !(ev.expires_at && new Date(ev.expires_at).getTime() < Date.now()))
-        .sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1);
-      setMembers(m.data || []); setEvents(upcoming); setPois(p.data || []); setLedger(l.data || []);
-    })();
-    return () => { live = false; };
-  }, [community?.id]);
-
-  const loading = members === null;
-  const active = (members || []).filter((m) => m.status !== "pending");
-  const monthStart = useMemo(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); }, []);
+  const loading = data === null;
+  const d = data && !Array.isArray(data) ? data : { members: [], events: [], pois: [], ledger: [] };
+  const active = d.members.filter((m) => m.status !== "pending");
+  const monthStart = monthStartStr();
   const joinedThisMonth = active.filter((m) => (m.joined_at || "") >= monthStart).length;
-
-  const winStart = useMemo(() => {
-    const d = new Date();
-    if (win === "D") return todayStr();
-    if (win === "W") { d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); }
-    d.setDate(1); return d.toISOString().slice(0, 10);
-  }, [win]);
-  const ledgerSum = (ledger || []).filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
+  const winStart = win === "D" ? todayStr() : win === "W" ? daysAgoStr(7) : monthStart;
+  const ledgerSum = d.ledger.filter((r) => r.happened_on >= winStart).reduce((a, r) => a + r.amount_cents, 0);
   const membershipMo = active.length * (community.membership_price_cents || 0);
+  const events = loading ? null : d.events, pois = loading ? null : d.pois;
 
   return html`<div class="dashhome">
     <div class="card">
@@ -117,24 +104,12 @@ function DashHome({ client, community, flash, go }) {
         </div>
       </div>
 
-      <div class="stats">
-      <div class="stat">
-        <div class="lab">Members</div>
-        <div class="num">${loading ? "…" : active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}</div>
-      </div>
-      <div class="stat">
-        <div class="lab">Memberships <span class="muted">${money(community.membership_price_cents || 0)}</span></div>
-        <div class="num money">${loading ? "…" : money(membershipMo)}<span class="unit">mo</span></div>
-      </div>
-      <div class="stat">
-        <div class="lab">Events ${"&"} POI
-          <span class="dwm">
-            ${["D", "W", "M"].map((w) => html`<button class=${win === w ? "on" : ""} onClick=${() => setWin(w)}>${w}</button>`)}
-          </span>
-        </div>
-        <div class="num money">${loading ? "…" : money(ledgerSum)}</div>
-      </div>
-      </div>
+      ${error && html`<${LoadError} what="this dashboard" error=${error} onRetry=${reload} />`}
+      <${Metrics} loading=${loading} className="u-mt-1" items=${[
+        ["Members", html`${active.length}${joinedThisMonth > 0 && html`<span class="rise">+${joinedThisMonth}</span>`}`],
+        [html`Memberships <span class="muted">${money(community.membership_price_cents || 0)}</span>`, html`${money(membershipMo)}<span class="unit">mo</span>`, { money: true }],
+        [html`Events ${"&"} POI <span class="dwm">${["D", "W", "M"].map((w) => html`<button class=${win === w ? "on" : ""} onClick=${() => setWin(w)}>${w}</button>`)}</span>`, money(ledgerSum), { money: true }],
+      ]} />
     </div>
 
     <div class="dashcols">
@@ -153,7 +128,7 @@ function DashHome({ client, community, flash, go }) {
               <div class="d">${niceDate(e.date || "")}${e.starts_at ? " · " + niceTime(e.starts_at) : ""}${e.location ? " · " + e.location : ""}</div>
             </div>
           </div>`)}
-          ${events !== null && events.length === 0 && html`<div class="empty">No upcoming events — create the first one 🎉</div>`}${events === null && html`<div class="empty" style="border:0">Loading…</div>`}
+          ${events !== null && events.length === 0 && html`<${Empty}>No upcoming events — create the first one 🎉</${Empty}>`}${events === null && html`<${Empty} bare>Loading…</${Empty}>`}
           ${events !== null && events.length > 4 && html`<button class="seeall" onClick=${() => go("dashboard/events")}>see all ${events.length}</button>`}
         </div>
       </div>
@@ -168,7 +143,7 @@ function DashHome({ client, community, flash, go }) {
             <div class="n">${p.name}</div>
             ${p.category && html`<div class="c">${p.category}</div>`}
           </div>`)}
-          ${pois !== null && pois.length === 0 && html`<div class="empty" style="grid-column:1/-1;cursor:pointer" onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</div>`}
+          ${pois !== null && pois.length === 0 && html`<${Empty} span onClick=${() => go("map")}>No points of interest yet — drop dots on the map ⚫</${Empty}>`}
         </div>
       </div>
     </div>

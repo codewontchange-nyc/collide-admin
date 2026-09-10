@@ -156,7 +156,7 @@ export const LoadError = ({ what = "this", error, onRetry }) =>
 
 // Page shell: <Page title="Money" sub="every dollar" actions=${html`<button …>`}>…</Page>
 export function Page({ title, sub, actions, card = true, reading, className = "", children }) {
-  const cls = "page" + (card ? " card" : "") + (reading ? " reading" : "") + (className ? " " + className : "");
+  const cls = "page" + (card ? " card" : " nocard") + (reading ? " reading" : "") + (className ? " " + className : "");
   return html`<div class=${cls}>
     ${(title || actions) && html`<div class="pagehead">
       <h2>${title}${sub && html` <span class="sub">${sub}</span>`}</h2>

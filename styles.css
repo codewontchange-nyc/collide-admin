@@ -281,6 +281,7 @@ a { color: inherit; }
 .attention-chip { background: var(--surface); border: 1.5px solid #e8d9b8; border-radius: 999px;
   padding: 5px 13px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .attention-chip:hover { border-color: var(--amber); }
+.attention-chip.bad { border-color: var(--bad-line); color: var(--bad); }
 
 /* ---------- CRM: funnel board, campaign editor, touch log ---------- */
 .crm-cols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; align-items: start; }
@@ -398,7 +399,7 @@ a { color: inherit; }
 .dt-del:hover { color: var(--danger); background: var(--rose-soft); }
 
 /* ---------- dashboard sub-nav: app-style chips ---------- */
-.subnav { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
+.subnav { display: flex; gap: 7px; margin: 0; flex-wrap: wrap; }   /* spacing belongs to the wrapper (.tabs / .dt-metrics) */
 .subnav button { background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px;
   padding: 6px 14px; color: var(--ink-2); font-weight: 600; font-size: 12.5px; transition: all .12s; box-shadow: var(--shadow-1); }
 .subnav button:hover { border-color: var(--faint); }
@@ -447,7 +448,7 @@ a { color: inherit; }
 /* ---- Moderation page ---- */
 .mod-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .mod-row { display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; margin-bottom: 10px; }
-.mod-row.off { opacity: .62; background: repeating-linear-gradient(-45deg, var(--surface) 0 14px, #f7efe6 14px 28px); }
+.mod-row.off { opacity: .62; background: repeating-linear-gradient(-45deg, var(--paper) 0 14px, var(--wash) 14px 28px); }
 .mod-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: none; border: 1px solid var(--line); }
 .mod-thumb.ph { display: flex; align-items: center; justify-content: center; font-size: 24px; background: var(--wash); }
 .mod-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -652,6 +653,7 @@ a { color: inherit; }
 /* ==================== shared systems (every page builds from these) ==================== */
 /* page shell: <Page> renders .page.card (chrome) or a plain .page container */
 .page.card { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-1); padding: 16px 18px; }
+.main > .page.nocard, .dash-right > .page.nocard { background: none; box-shadow: none; padding: 0; border-radius: 0; }   /* until the legacy .main > .page rule goes */
 .pagehead h2 .sub { font: 400 13px var(--body); color: var(--muted); margin-left: 6px; }
 .tabs { margin-bottom: 14px; }
 .tabs .subnav { margin: 0; }
@@ -696,3 +698,10 @@ a { color: inherit; }
 .stage-dark { --paper: #150f0c; --surface: rgba(28,21,17,.82); --surface-2: #2a211c; --wash: rgba(251,246,240,.08);
   --line: rgba(251,246,240,.10); --line-2: rgba(251,246,240,.14); --ink: #fbf6f0; --ink-2: #c9bfb4; --muted: #a3968c; --faint: #6f645b;
   --teal: var(--teal-bright); --ok: var(--teal-bright); --ok-ink: var(--teal-bright); --shadow-1: 0 10px 30px #0008; color: var(--ink); }
+.page.ov .pagehead h2 { font-size: 24px; }
+.dt-metrics .metrics { display: flex; margin: 0; max-width: none; gap: 10px; }
+.dt-metrics .metrics .metric { min-width: 74px; padding: 7px 14px 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.metrics .metric .l { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.metrics .metric .rise { color: var(--ok); font: 600 12px var(--body); vertical-align: super; margin-left: 4px; }
+.metrics .metric .unit { color: var(--muted); font: 400 14px var(--body); margin-left: 4px; }
