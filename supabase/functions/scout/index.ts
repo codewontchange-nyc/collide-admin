@@ -11,7 +11,8 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { json, preflight, caller as getCaller, isAnyStaff, isOwner, fail, type Caller } from "../_shared/http.ts";
-import { type CityRow, canonicalUrl, todayIn } from "./lib/item.ts";
+import { type CityRow, canonicalUrl, todayIn, whenBucket, dateExpiry, niceTime, guessCategory, EMOJI, trim, norm } from "./lib/item.ts";
+import { copyImage } from "./lib/image.ts";
 import { fetchText } from "./lib/fetch.ts";
 import { upsertItems, cachedRun, runStart, runEnd } from "./lib/store.ts";
 import { itemsFromJsonLd, ogFallback, claudeExtract, jsonLdEvents, jsonLdBlocks } from "./adapters/generic.ts";
@@ -152,6 +153,72 @@ async function refresh({ sourceId = null as string | null, limit = 10, by = null
   return { ran: results.length, results };
 }
 
+/* ---------- ingest: a feed item becomes a public "Collide pick" ----------
+   Owners only. Hosted by the house profile (service role writes; the caller
+   was already verified), so act_ins stays untouched. A city-wide pick is only
+   visible to members once it has a map pin, so without x/y we refuse rather
+   than publish something invisible. `dry` returns the proposed row + placement. */
+const SOURCE_NAME: Record<string, string> = { ics: "calendar", rss: "feed", jsonld_page: "listing", generic: "" };
+async function ingest(b: Record<string, unknown>, me: Caller) {
+  const house = Deno.env.get("SCOUT_HOST_PROFILE_ID");
+  if (!house) return { error: "SCOUT_HOST_PROFILE_ID is not set" };
+  const { data: item } = await admin.from("scout_items").select("*").eq("id", String(b.item_id || "")).maybeSingle();
+  if (!item) return { error: "Item not found" };
+  if (item.status === "ingested" && item.activity_id) {
+    const { data: a } = await admin.from("activities").select("id").eq("id", item.activity_id).maybeSingle();
+    if (a) return { error: "Already in Collide", activity_id: item.activity_id };
+  }
+  const city = await cityRow(item.city); if (!city) return { error: "Unknown city" };
+  const today = todayIn(city.tz);
+  const date = String(b.date || item.start_date), starts_at = (b.starts_at ?? item.start_time) ? String(b.starts_at ?? item.start_time).slice(0, 5) : null;
+  const title = trim(String(b.title || item.title), 120);
+  const location = item.venue_name || (item.address ? String(item.address).split(",")[0] : null);
+  const category = String(b.category || guessCategory(item.categories || [], item.title));
+  const via = ["via", SOURCE_NAME[item.source] ? SOURCE_NAME[item.source] + " ·" : "", (() => { try { return new URL(item.url).hostname.replace(/^www\./, ""); } catch { return ""; } })(), item.organizer_name ? "· " + item.organizer_name : ""].filter(Boolean).join(" ");
+  const priceNote = item.price_min_cents != null && item.price_max_cents != null && item.price_max_cents !== item.price_min_cents ? `from $${(item.price_min_cents / 100).toFixed(0)}–$${(item.price_max_cents / 100).toFixed(0)}` : "";
+  const note = [via, priceNote, b.note != null ? trim(String(b.note), 280) : trim(item.description, 280)].filter(Boolean).join(" — ");
+  const community_id = b.community_id ? String(b.community_id) : null;
+  const row = {
+    host_id: house, community_id, title, date, starts_at, location,
+    lat: item.lat, lng: item.lng, image_path: null as string | null,
+    price_cents: item.price_min_cents ?? 0, category, note, capacity: null, link: item.url,
+    visibility: "public", city: item.city,
+    place: location, at_time: niceTime(starts_at), when_bucket: whenBucket(date, today), expires_at: dateExpiry(date, city.tz),
+  };
+  // placement: admin's click → a POI with the venue's name → nothing (refuse)
+  let place: { x: number; y: number; origin: string } | null = null;
+  if (typeof b.x === "number" && typeof b.y === "number") place = { x: Math.min(1, Math.max(0, b.x)), y: Math.min(1, Math.max(0, b.y)), origin: "placed" };
+  else if (item.venue_name) {
+    const words = norm(item.venue_name).slice(0, 3).join(" ");
+    const { data: exact } = await admin.from("pois").select("name,x,y").eq("city", item.city).ilike("name", item.venue_name).not("x", "is", null).limit(1);
+    const { data: loose } = exact?.length || !words ? { data: [] } : await admin.from("pois").select("name,x,y").eq("city", item.city).ilike("name", words + "%").not("x", "is", null).limit(1);
+    const p = exact?.[0] || loose?.[0];
+    if (p) place = { x: p.x, y: p.y, origin: "poi: " + p.name };
+  }
+  // soft warning: a hand-made event that looks like the same thing
+  const words = norm(item.title).slice(0, 3).join(" ");
+  const { data: similar } = words ? await admin.from("activities").select("id,title").eq("city", item.city).eq("date", date).ilike("title", `%${words}%`).limit(3) : { data: [] };
+  if (b.dry) return { row, place, warnings: (similar || []).map((a) => ({ activity_id: a.id, title: a.title })), item };
+
+  if (!community_id && !place) return { error: "unplaced", place: null };
+  if (b.use_image !== false && item.image_url) row.image_path = await copyImage(admin, item.image_url, item.id);
+  const { data: act, error: aErr } = await admin.from("activities").insert(row).select("id").single();
+  if (aErr) return { error: aErr.message };
+  let pin_id: string | null = null;
+  if (!community_id && place) {
+    const { data: pin, error: pErr } = await admin.from("map_events").insert({
+      activity_id: act.id, from_activity: true, title, emoji: EMOJI[category] || "✨", at_time: row.at_time, place: location, venue: "",
+      note: trim(item.description, 140) || null, link: item.url, x: place.x, y: place.y, city: item.city, expires_at: row.expires_at, created_by: house,
+    }).select("id").single();
+    if (pErr) { await admin.from("activities").delete().eq("id", act.id); return { error: "Pin failed: " + pErr.message }; }
+    pin_id = pin.id;
+  }
+  await admin.from("scout_items").update({ status: "ingested", activity_id: act.id, ingested_by: me.user.id, ingested_at: new Date().toISOString() }).eq("id", item.id);
+  await admin.from("scout_items").update({ status: "dismissed", dupe_of: item.id }).eq("dupe_of", item.id).in("status", ["new", "saved"]);
+  if (item.dupe_of) await admin.from("scout_items").update({ status: "dismissed" }).eq("id", item.dupe_of).in("status", ["new", "saved"]);
+  return { activity_id: act.id, pin_id, image_path: row.image_path, place };
+}
+
 Deno.serve(async (req) => {
   const pre = preflight(req); if (pre) return pre;
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -194,7 +261,8 @@ Deno.serve(async (req) => {
     }
     if (mode === "ingest") {
       if (!(await isOwner(me))) return json({ error: "Owners only" }, 403);
-      return json({ error: "ingest arrives in the next release" }, 501);
+      const r = await ingest(b, me) as { error?: string };
+      return json(r, r.error ? (r.error === "unplaced" ? 409 : 400) : 200);
     }
     return json({ error: "mode" }, 400);
   } catch (e) { return fail(e); }

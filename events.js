@@ -212,7 +212,7 @@ export function StopsModal({ client, event, community, flash, onClose, onSaved }
           : !img ? html`<${Empty}>No ${cityName(city)} artwork yet — upload it on the Map page first.</${Empty}>`
           : html`<img src=${img} alt="" draggable=${false} />
             ${placed.length > 1 && html`<svg class="stops-trail" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <path d=${trail} fill="none" stroke="#1d1a16" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".88" />
+              <path d=${trail} fill="none" style="stroke:var(--ink)" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".88" />
             </svg>`}
             ${placed.map(({ s, i }) => html`<button type="button" key=${i} class="stop-dot" title=${s.title || "Stop " + (i + 1)} aria-label=${"Move stop " + (i + 1)}
               style=${`left:${s.x * 100}%;top:${s.y * 100}%`} onPointerDown=${startDrag(i)} onClick=${(e) => e.stopPropagation()}>${i + 1}</button>`)}`}
