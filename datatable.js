@@ -1,25 +1,18 @@
-import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, Modal, moneyExact, niceTime, todayStr, CITIES, cityName, fetchAll } from "./ui.js?v=__V__";
+import { useState, useMemo, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
+import { html, Avatar, Pill, Page, Tabs, Metrics, Loading, Empty, LoadError, moneyExact, niceTime, todayStr, CITIES, cityName,
+  shortDate, shortDateTime, isExpired, whenBucket, dateExpiry, EV_CATS, toCents, stampCity, DEFAULT_CITY, DAY, confirmDanger, promptReason } from "./ui.js?v=__V__";
+import { useLoader, paged, sendModerate, sendInvite, COLS, showError } from "./db.js?v=__V__";
+import { CommunityModal, InviteModal, BanModal } from "./modals.js?v=__V__";
+import { PAGE } from "./routes.js?v=__V__";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
    Airtable-style table — sticky header, sortable columns, search, community
    filter, "+ New" row creation, and EVERY column editable in place: text,
    dates, money, and select-pickers for community, author and member
-   (RLS is the real permission gate; this page is only offered to owners). */
+   (RLS is the real permission gate; this page is only offered to owners).
+   Every tab pages through its table, so the metric chips count everything. */
 
-const TABS = [["communities", "Communities"], ["people", "People"], ["announcements", "Announcements"], ["events", "Events"], ["members", "Memberships"], ["facilitators", "Facilitators"], ["circles", "Circles"], ["dms", "DMs"], ["invites", "Invites"], ["bans", "Bans"]];
-
-const short = (iso) => {
-  if (!iso) return "—";
-  try { return new Date(iso + (iso.length === 10 ? "T00:00:00" : "")).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }); }
-  catch { return iso; }
-};
-const shortDT = (iso) => {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
-  catch { return iso; }
-};
 const isoToLocal = (iso) => {
   if (!iso) return "";
   const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
@@ -30,27 +23,12 @@ const localToIso = (v) => (v ? new Date(v).toISOString() : null);
 // value codecs per column type: display, prefill the input, parse it back
 const T = {
   text:   { fmt: (v) => (v ?? "—"), toIn: (v) => v ?? "", parse: (v) => (v.trim() || null), input: "text" },
-  money:  { fmt: (v) => (v ? moneyExact(v) : "—"), toIn: (v) => (v ? v / 100 : ""), parse: (v) => Math.round(parseFloat(v || "0") * 100) || 0, input: "number" },
-  date:   { fmt: short, toIn: (v) => v || "", parse: (v) => v || null, input: "date" },
+  money:  { fmt: (v) => (v ? moneyExact(v) : "—"), toIn: (v) => (v ? v / 100 : ""), parse: toCents, input: "number" },
+  date:   { fmt: shortDate, toIn: (v) => v || "", parse: (v) => v || null, input: "date" },
   time:   { fmt: (v) => (v ? niceTime(v) : "—"), toIn: (v) => v || "", parse: (v) => v || null, input: "time" },
-  dt:     { fmt: shortDT, toIn: isoToLocal, parse: localToIso, input: "datetime-local" },
+  dt:     { fmt: shortDateTime, toIn: isoToLocal, parse: localToIso, input: "datetime-local" },
   select: { fmt: (v) => (v ?? "—"), toIn: (v) => v ?? "", parse: (v) => v || null },
 };
-
-// same taxonomy as the app's Plan-something sheet
-const EV_CATS = ["food", "coffee", "drinks", "active", "walk", "chill", "other"];
-const whenBucket = (dateStr) => {
-  const days = Math.round((new Date(dateStr + "T00:00:00") - new Date(new Date().toDateString())) / 864e5);
-  if (days <= 0) return "today";
-  if (days === 1) return "tomorrow";
-  const dow = new Date(dateStr + "T00:00:00").getDay();
-  if (days <= 7) return (dow === 0 || dow >= 5) ? "this_weekend" : "this_week";
-  if (days <= 14) return "next_week";
-  return "someday";
-};
-const dateExpiry = (dateStr) => new Date(new Date(dateStr + "T23:59:00").getTime() + 864e5).toISOString();
-
-const expired = (iso) => !!iso && new Date(iso).getTime() < Date.now();
 
 // option builders for the select-pickers
 const commOpts = (ctx, noneLabel) => [
@@ -61,60 +39,70 @@ const profOpts = (ctx) => ctx.profiles.map((p) => ({ v: p.id, l: p.display_name 
 const commName = (ctx, id, noneLabel) => (id ? (ctx.communities.find((c) => c.id === id)?.name || "?") : noneLabel);
 const profName = (ctx, id) => (id ? (ctx.profiles.find((p) => p.id === id)?.display_name || id.slice(0, 6)) : "—");
 const profCell = (ctx, id) => { const p = ctx.profiles.find((x) => x.id === id);
-  return html`<span style="display:inline-flex;align-items:center;gap:6px">${p && html`<${Avatar} profile=${p} size="sm" />`}${p?.display_name || (id ? id.slice(0, 6) : "—")}</span>`; };
+  return html`<span class="who">${p && html`<${Avatar} profile=${p} size="sm" />`}${p?.display_name || (id ? id.slice(0, 6) : "—")}</span>`; };
+const all = (build) => paged((from, to) => build().range(from, to));
+const withinDays = (iso, n) => iso > new Date(Date.now() - n * DAY).toISOString();
+
+// Ban from ALL of Collide — People and Memberships share one button
+const banAction = (getId, getName) => (r, api) => html`<button class="btn sm danger" onClick=${async () => {
+  const who = getName(r) || "this user";
+  const reason = promptReason(`Ban ${who} from ALL of Collide?\n\nThey are signed out, can't sign back in, lose every membership, and can't be re-invited. Type a reason to confirm:`);
+  if (reason === null || !reason.trim()) return;
+  const res = await sendModerate(api.client, { action: "ban", profile_id: getId(r), reason: reason.trim() });
+  if (res.error) showError(api.flash, "Ban", res.error); else { api.flash(`Banned ${who} 🔨`); api.reload(); }
+}}>Ban</button>`;
 
 const SCHEMAS = {
   communities: {
     table: "communities",
     newLabel: "+ New community",
     modalCreate: true,   // name/city/etc chosen up front; owner membership seeded
-    load: (client) => client.from("communities").select("*").order("created_at"),
+    load: (client) => all(() => client.from("communities").select("*").order("created_at")),
     match: (q, r) => q.eq("id", r.id),
     metrics: (rows) => [
       ["total", rows.length],
       ["active", rows.filter((r) => !r.archived_at).length],
       ["archived", rows.filter((r) => r.archived_at).length],
-      ["cities", new Set(rows.filter((r) => !r.archived_at).map((r) => r.city || "nyc")).size],
+      ["cities", new Set(rows.filter((r) => !r.archived_at).map((r) => r.city || DEFAULT_CITY)).size],
     ],
     cols: [
       { key: "emoji", label: "", type: "text", edit: true },
       { key: "name", label: "Community", type: "text", edit: true, wide: true },
       { key: "city", label: "City", type: "select", edit: true,
-        options: () => CITIES.map(([v, l]) => ({ v, l })), get: (r) => cityName(r.city || "nyc") },
+        options: () => CITIES.map(([v, l]) => ({ v, l })), get: (r) => cityName(r.city || DEFAULT_CITY) },
       { key: "description", label: "Description", type: "text", edit: true },
       { key: "membership_price_cents", label: "Price/mo", type: "money", edit: true },
       { key: "created_at", label: "Created", type: "dt" },
       { key: "archived_at", label: "Status", get: (r) => (r.archived_at ? "archived" : "active"),
         cell: (r) => r.archived_at
-          ? html`<span class="pillstat pending">🗂 archived ${short(r.archived_at)}</span>`
-          : html`<span class="pillstat member">active</span>` },
+          ? html`<${Pill} tone="warn">🗂 archived ${shortDate(r.archived_at)}</${Pill}>`
+          : html`<${Pill} tone="ok">active</${Pill}>` },
     ],
-    rowAction: (r, api) => html`<button class="btn small ghost" onClick=${async () => {
+    rowAction: (r, api) => html`<button class="btn sm ghost" onClick=${async () => {
       const val = r.archived_at ? null : new Date().toISOString();
-      if (!r.archived_at && !confirm(`Archive "${r.name}"? It disappears from members' apps (POIs and announcements included) until restored. Staff keep console access.`)) return;
+      if (!r.archived_at && !confirmDanger(`Archive "${r.name}"? It disappears from members' apps (POIs and announcements included) until restored. Staff keep console access.`)) return;
       const { error } = await api.client.from("communities").update({ archived_at: val }).eq("id", r.id);
-      api.flash(error ? error.message : (val ? "Archived — hidden from the app 🗂" : "Restored — live again ✓"));
-      if (!error) api.reload();
+      if (error) showError(api.flash, "Archive", error); else { api.flash(val ? "Archived — hidden from the app 🗂" : "Restored — live again ✓"); api.reload(); }
     }}>${r.archived_at ? "Restore" : "Archive"}</button>`,
   },
   announcements: {
     table: "announcements",
     newLabel: "+ New announcement",
-    load: (client) => client.from("announcements")
+    load: (client) => all(() => client.from("announcements")
       .select("*, author:profiles!announcements_author_id_fkey(id,display_name,avatar_url)")
-      .order("created_at", { ascending: false }).limit(1000),
+      .order("created_at", { ascending: false })),
     match: (q, r) => q.eq("id", r.id),
     create: (client, ctx) => client.from("announcements").insert({
       body: "New announcement ✏️ (click to edit)",
-      community_id: null,
+      community_id: null, city: DEFAULT_CITY,
       expires_at: new Date(Date.now() + 48 * 36e5).toISOString(),
     }),
-    derive: (key, val, ctx) => (key === "community_id" && val
-      ? { city: ctx.communities.find((c) => c.id === val)?.city || "nyc" } : {}),
+    // the city follows the community — members only see their city's posts
+    derive: (key, val, ctx) => (key === "community_id" ? { city: stampCity(ctx.communities, val) } : {}),
     metrics: (rows) => [
       ["total", rows.length],
-      ["live", rows.filter((r) => !expired(r.expires_at)).length],
-      ["expired", rows.filter((r) => expired(r.expires_at)).length],
+      ["live", rows.filter((r) => !isExpired(r.expires_at)).length],
+      ["expired", rows.filter((r) => isExpired(r.expires_at)).length],
       ["global", rows.filter((r) => !r.community_id).length],
     ],
     cols: [
@@ -130,32 +118,28 @@ const SCHEMAS = {
   events: {
     table: "activities",
     newLabel: "+ New event",
-    load: (client) => client.from("activities").select("*").order("created_at", { ascending: false }).limit(1000),
+    load: (client) => all(() => client.from("activities").select("*").order("created_at", { ascending: false })),
     match: (q, r) => q.eq("id", r.id),
     create: (client, ctx) => client.from("activities").insert({
       title: "New event ✏️ (click to edit)",
       community_id: ctx.communities[0]?.id ?? null,
-      city: ctx.communities[0]?.city || "nyc",
+      city: ctx.communities[0]?.city || DEFAULT_CITY,
       host_id: ctx.session.user.id,
       date: todayStr(), category: "other", visibility: "public",
       when_bucket: "today", expires_at: dateExpiry(todayStr()),
     }),
     // keep the app-native mirror fields in sync when the admin edits inline
     derive: (key, val, ctx) => {
-      if (key === "community_id") return val
-        ? { city: ctx.communities.find((c) => c.id === val)?.city || "nyc" }
-        : {};
-      if (key === "date") return val
-        ? { when_bucket: whenBucket(val), expires_at: dateExpiry(val) }
-        : { when_bucket: null };
+      if (key === "community_id") return val ? { city: stampCity(ctx.communities, val) } : {};
+      if (key === "date") return val ? { when_bucket: whenBucket(val), expires_at: dateExpiry(val) } : { when_bucket: null };
       if (key === "starts_at") return { at_time: val ? niceTime(val) : null };
       if (key === "location") return { place: val };
       return {};
     },
     metrics: (rows) => [
       ["total", rows.length],
-      ["upcoming", rows.filter((r) => r.date ? r.date >= todayStr() : !expired(r.expires_at)).length],
-      ["past", rows.filter((r) => r.date ? r.date < todayStr() : expired(r.expires_at)).length],
+      ["upcoming", rows.filter((r) => r.date ? r.date >= todayStr() : !isExpired(r.expires_at)).length],
+      ["past", rows.filter((r) => r.date ? r.date < todayStr() : isExpired(r.expires_at)).length],
       ["ticketed", rows.filter((r) => r.price_cents > 0).length],
     ],
     cols: [
@@ -176,9 +160,9 @@ const SCHEMAS = {
     // counting anyone who's in several communities.
     table: "profiles",
     newLabel: null,   // people arrive via invites, not row creation
-    load: (client) => fetchAll((from, to) => client.from("profiles")
-      .select("*, memberships:community_members(community_id,status)")
-      .order("created_at", { ascending: false }).range(from, to)),
+    load: (client) => all(() => client.from("profiles")
+      .select(COLS.profile + ",connect_code, memberships:community_members(community_id,status)")
+      .order("created_at", { ascending: false })),
     match: (q, r) => q.eq("id", r.id),
     metrics: (rows) => [
       ["people", rows.length],
@@ -188,12 +172,12 @@ const SCHEMAS = {
     ],
     cols: [
       { key: "display_name", label: "Person", type: "text", edit: true, wide: true,
-        cell: (r) => html`<span style="display:inline-flex;align-items:center;gap:8px"><${Avatar} profile=${r} size="sm" /> <b>${r.display_name || "—"}</b></span> ` },
+        cell: (r) => html`<span class="who"><${Avatar} profile=${r} size="sm" /> <b>${r.display_name || "—"}</b></span> ` },
       { key: "memberships", label: "Communities",
         get: (r) => (r.memberships || []).filter((m) => m.status === "member").length,
         cell: (r, ctx) => (r.memberships || []).length
-          ? html`<span style="display:inline-flex;gap:4px;flex-wrap:wrap">
-              ${(r.memberships || []).map((m) => html`<span class=${"pillstat " + m.status} title=${m.status}>${commName(ctx, m.community_id, "?")}</span>`)}
+          ? html`<span class="u-row u-wrap" style="gap:4px">
+              ${(r.memberships || []).map((m) => html`<${Pill} title=${m.status}>${commName(ctx, m.community_id, "?")}</${Pill}>`)}
             </span>`
           : html`<span class="muted">—</span>` },
       { key: "home_city", label: "Home city", type: "select", edit: true,
@@ -202,23 +186,16 @@ const SCHEMAS = {
       { key: "connect_code", label: "Connect code" },
       { key: "created_at", label: "Joined Collide", type: "dt" },
     ],
-    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
-      const who = r.display_name || "this user";
-      const reason = prompt(`Ban ${who} from ALL of Collide?\n\nThey are signed out, can't sign back in, lose every membership, and can't be re-invited. Type a reason to confirm:`);
-      if (reason === null || !reason.trim()) return;
-      const res = await sendModerate(api.client, { action: "ban", profile_id: r.id, reason: reason.trim() });
-      api.flash(res.error || `Banned ${who} 🔨`);
-      if (!res.error) api.reload();
-    }}>Ban</button>`,
+    rowAction: banAction((r) => r.id, (r) => r.display_name),
     noDelete: true,   // removing an account goes through ban/remove, not row delete
   },
   members: {
     table: "community_members",
     newLabel: "+ Add member",
     modalCreate: true,   // composite key — pick person & community first
-    load: (client) => fetchAll((from, to) => client.from("community_members")
+    load: (client) => all(() => client.from("community_members")
       .select("*, profile:profiles!community_members_profile_id_fkey(id,display_name,avatar_url)")
-      .order("joined_at", { ascending: false }).range(from, to)),
+      .order("joined_at", { ascending: false })),
     match: (q, r) => q.eq("community_id", r.community_id).eq("profile_id", r.profile_id),
     metrics: (rows) => [
       ["people", new Set(rows.map((r) => r.profile_id)).size],   // unique — one person can hold several memberships
@@ -229,21 +206,14 @@ const SCHEMAS = {
     cols: [
       { key: "profile_id", label: "Member", type: "select", edit: true, wide: true, join: true,
         options: profOpts, get: (r) => r.profile?.display_name || "—",
-        cell: (r) => html`<span style="display:inline-flex;align-items:center;gap:8px"><${Avatar} profile=${r.profile} size="sm" /> <b>${r.profile?.display_name || "—"}</b></span> ` },
+        cell: (r) => html`<span class="who"><${Avatar} profile=${r.profile} size="sm" /> <b>${r.profile?.display_name || "—"}</b></span> ` },
       { key: "community_id", label: "Community", type: "select", edit: true,
         options: (ctx) => commOpts(ctx), get: (r, ctx) => commName(ctx, r.community_id, "?") },
       { key: "status", label: "Status", type: "select", edit: true, options: () => [{ v: "member", l: "member" }, { v: "pending", l: "pending" }],
-        cell: (r) => html`<span class=${"pillstat " + r.status}>${r.status}</span>` },
+        cell: (r) => html`<${Pill}>${r.status}</${Pill}>` },
       { key: "joined_at", label: "Joined", type: "dt", edit: true },
     ],
-    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
-      const who = r.profile?.display_name || "this user";
-      const reason = prompt(`Ban ${who} from ALL of Collide?\n\nThey are signed out, can't sign back in, lose every membership, and can't be re-invited. Type a reason to confirm:`);
-      if (reason === null || !reason.trim()) return;
-      const res = await sendModerate(api.client, { action: "ban", profile_id: r.profile_id, reason: reason.trim() });
-      api.flash(res.error || `Banned ${who} 🔨`);
-      if (!res.error) api.reload();
-    }}>Ban</button>`,
+    rowAction: banAction((r) => r.profile_id, (r) => r.profile?.display_name),
   },
   // Who holds a facilitator key (staff) and whether their public listing (the
   // app's `facilitators` table) is live. The DB keeps the two in step — a staff
@@ -263,24 +233,23 @@ const SCHEMAS = {
     ],
     cols: [
       { key: "email", label: "Facilitator", wide: true,
-        cell: (r, ctx) => html`<span style="display:inline-flex;align-items:center;gap:8px">
+        cell: (r) => html`<span class="who">
           ${r.profile_id && html`<${Avatar} profile=${{ display_name: r.display_name, avatar_url: r.avatar_url }} size="sm" />`}
           <span><b>${r.display_name || r.email}</b>${r.display_name && html`<div class="tiny muted">${r.email}</div>`}</span></span>` },
       { key: "community_id", label: "Community", get: (r, ctx) => commName(ctx, r.community_id, "all communities") },
       { key: "profile_id", label: "Account", get: (r) => (r.profile_id ? "signed in" : "not yet"),
-        cell: (r) => (r.profile_id ? html`<span class="pillstat member">signed in</span>` : html`<span class="pillstat pending">never signed in</span>`) },
+        cell: (r) => (r.profile_id ? html`<${Pill} tone="ok">signed in</${Pill}>` : html`<${Pill} tone="warn">never signed in</${Pill}>`) },
       { key: "listing_active", label: "Public listing", get: (r) => (r.listing_active ? "live" : r.has_listing ? "draft" : "none"),
-        cell: (r) => r.listing_active ? html`<span class="pillstat facilitator">live</span>`
-          : r.community_id ? html`<span class="pillstat">${r.has_listing ? "draft — they fill it in from the app" : "none"}</span>`
+        cell: (r) => r.listing_active ? html`<${Pill} tone="brand">live</${Pill}>`
+          : r.community_id ? html`<${Pill} tone="neutral">${r.has_listing ? "draft — they fill it in from the app" : "none"}</${Pill}>`
           : html`<span class="muted tiny">n/a (all-community key)</span>` },
       { key: "headline", label: "Headline", get: (r) => r.headline || "—" },
       { key: "staff_since", label: "Key since", type: "dt" },
     ],
-    rowAction: (r, api) => html`<button class="btn small danger" onClick=${async () => {
-      if (!confirm(`Remove ${r.display_name || r.email}'s facilitator key${r.community_id ? "" : " (all communities)"}? Their public listing is retired with it.`)) return;
-      const { error } = await api.client.from("staff").delete().eq("id", r.staff_id);
-      api.flash(error?.message || "Key removed");
-      if (!error) api.reload();
+    rowAction: (r, api) => html`<button class="btn sm danger" onClick=${async () => {
+      if (!confirmDanger(`Remove ${r.display_name || r.email}'s facilitator key${r.community_id ? "" : " (all communities)"}? Their public listing is retired with it.`)) return;
+      const { error } = await api.client.from("staff").delete().eq("id", r.staff_id).neq("role", "owner");
+      if (error) showError(api.flash, "Remove key", error); else { api.flash("Key removed"); api.reload(); }
     }}>Remove key</button>`,
   },
 
@@ -289,21 +258,20 @@ const SCHEMAS = {
   circles: {
     table: "connections",
     newLabel: null,
-    load: (client) => fetchAll((from, to) => client.from("connections").select("*").order("created_at", { ascending: false }).range(from, to)),
+    load: (client) => all(() => client.from("connections").select("*").order("created_at", { ascending: false })),
     match: (q, r) => q.eq("a", r.a).eq("b", r.b),
     noDelete: true,
     metrics: (rows) => [
       ["connections", rows.filter((r) => r.status === "accepted").length],
       ["pending", rows.filter((r) => r.status === "pending").length],
       ["people connected", new Set(rows.filter((r) => r.status === "accepted").flatMap((r) => [r.a, r.b])).size],
-      ["this month", rows.filter((r) => r.created_at > new Date(Date.now() - 30 * 864e5).toISOString()).length],
+      ["this month", rows.filter((r) => withinDays(r.created_at, 30)).length],
     ],
     cols: [
       { key: "a", label: "Person", wide: true, get: (r, ctx) => profName(ctx, r.a), cell: (r, ctx) => profCell(ctx, r.a) },
       { key: "b", label: "Connected to", wide: true, get: (r, ctx) => profName(ctx, r.b), cell: (r, ctx) => profCell(ctx, r.b) },
       { key: "requested_by", label: "Asked by", get: (r, ctx) => (r.requested_by === r.a ? "←" : r.requested_by === r.b ? "→" : "?") + " " + profName(ctx, r.requested_by) },
-      { key: "status", label: "Status", get: (r) => r.status,
-        cell: (r) => html`<span class=${"pillstat " + (r.status === "accepted" ? "member" : r.status === "pending" ? "pending" : "danger")}>${r.status || "—"}</span>` },
+      { key: "status", label: "Status", get: (r) => r.status, cell: (r) => html`<${Pill}>${r.status || "—"}</${Pill}>` },
       { key: "created_at", label: "Since", type: "dt" },
     ],
   },
@@ -314,18 +282,19 @@ const SCHEMAS = {
   dms: {
     table: "dm_threads",
     newLabel: null,
-    load: (client) => client.from("dm_threads")
-      .select("*, announcement:announcements(body,community_id), messages:dm_messages(count)")
-      .order("created_at", { ascending: false }).limit(1000)
-      .then((res) => ({ ...res, data: (res.data || []).map((r) => ({ ...r,
-        community_id: r.announcement?.community_id ?? null, msg_count: r.messages?.[0]?.count ?? 0 })) })),
+    load: async (client) => {
+      const res = await all(() => client.from("dm_threads")
+        .select("*, announcement:announcements(body,community_id), messages:dm_messages(count)")
+        .order("created_at", { ascending: false }));
+      return { ...res, data: (res.data || []).map((r) => ({ ...r, community_id: r.announcement?.community_id ?? null, msg_count: r.messages?.[0]?.count ?? 0 })) };
+    },
     match: (q, r) => q.eq("id", r.id),
     noDelete: true,
     metrics: (rows) => [
       ["threads", rows.length],
       ["open", rows.filter((r) => r.status !== "closed").length],
       ["messages", rows.reduce((a, r) => a + (r.msg_count || 0), 0)],
-      ["this week", rows.filter((r) => r.created_at > new Date(Date.now() - 7 * 864e5).toISOString()).length],
+      ["this week", rows.filter((r) => withinDays(r.created_at, 7)).length],
     ],
     cols: [
       { key: "starter_id", label: "Started by", get: (r, ctx) => profName(ctx, r.starter_id), cell: (r, ctx) => profCell(ctx, r.starter_id) },
@@ -335,16 +304,16 @@ const SCHEMAS = {
       { key: "community_id", label: "Community", get: (r, ctx) => commName(ctx, r.community_id, "—") },
       { key: "msg_count", label: "Msgs" },
       { key: "status", label: "Status", get: (r) => r.status || "open",
-        cell: (r) => html`<span class=${"pillstat " + (r.status === "closed" ? "" : "member")}>${r.status || "open"}${r.closed_at ? html` <span class="tiny muted">${shortDT(r.closed_at)}</span>` : ""}</span>` },
+        cell: (r) => html`<${Pill} tone=${r.status === "closed" ? "neutral" : "ok"}>${r.status || "open"}${r.closed_at ? html` <span class="tiny muted">${shortDateTime(r.closed_at)}</span>` : ""}</${Pill}>` },
       { key: "created_at", label: "Started", type: "dt" },
     ],
-    rowAction: (r) => html`<button class="btn small ghost" onClick=${() => { location.hash = "/mod?kind=dm_messages&q=" + r.id; }}>Messages</button>`,
+    rowAction: (r, api) => html`<button class="btn sm ghost" onClick=${() => api.go("mod?kind=dm_messages&q=" + r.id)}>Messages</button>`,
   },
 
   invites: {
     table: "invites",
     newLabel: null,   // invites are sent from the member/facilitator modals
-    load: (client) => client.from("invites").select("*").order("sent_at", { ascending: false }).limit(1000),
+    load: (client) => all(() => client.from("invites").select("*").order("sent_at", { ascending: false })),
     match: (q, r) => q.eq("id", r.id),
     // revoking an unaccepted facilitator invite also pulls their staff key
     afterDelete: async (client, r) => {
@@ -362,34 +331,32 @@ const SCHEMAS = {
     ],
     cols: [
       { key: "email", label: "Invited", wide: true },
-      { key: "kind", label: "Kind", get: (r) => r.kind,
-        cell: (r) => html`<span class=${"pillstat " + (r.kind === "facilitator" ? "facilitator" : "")}>${r.kind}</span>` },
+      { key: "kind", label: "Kind", get: (r) => r.kind, cell: (r) => html`<${Pill} tone=${r.kind === "facilitator" ? "brand" : "neutral"}>${r.kind}</${Pill}>` },
       { key: "community_id", label: "Community",
         get: (r, ctx) => commName(ctx, r.community_id, r.kind === "facilitator" ? "all communities" : "—") },
       { key: "invited_by", label: "Invited by" },
       { key: "sent_at", label: "Sent", get: (r) => r.sent_at,
-        cell: (r) => html`${shortDT(r.sent_at)}${r.attempts > 1 && html` <span class="muted tiny">·×${r.attempts}</span>`}` },
+        cell: (r) => html`${shortDateTime(r.sent_at)}${r.attempts > 1 && html` <span class="muted tiny">·×${r.attempts}</span>`}` },
       { key: "accepted_at", label: "Status", get: (r) => r.accepted_at || "",
         cell: (r) => r.accepted_at
-          ? html`<span class="pillstat member">accepted ${short(r.accepted_at)}</span>`
-          : html`<span class="pillstat pending">awaiting</span>` },
+          ? html`<${Pill} tone="ok">accepted ${shortDate(r.accepted_at)}</${Pill}>`
+          : html`<${Pill} tone="warn">awaiting</${Pill}>` },
     ],
-    rowAction: (r, api) => !r.accepted_at && html`<button class="btn small ghost" onClick=${async () => {
+    rowAction: (r, api) => !r.accepted_at && html`<button class="btn sm ghost" onClick=${async () => {
       const res = await sendInvite(api.client, { email: r.email, kind: r.kind, community_id: r.community_id });
-      api.flash(res.error || "Invite re-sent 💌");
-      if (!res.error) api.reload();
+      if (res.error) showError(api.flash, "Resend", res.error); else { api.flash("Invite re-sent 💌"); api.reload(); }
     }}>Resend</button>`,
   },
   bans: {
     table: "bans",
     newLabel: "+ Ban by email",
     modalCreate: true,
-    load: (client) => client.from("bans").select("*").order("created_at", { ascending: false }).limit(500),
+    load: (client) => all(() => client.from("bans").select("*").order("created_at", { ascending: false })),
     match: (q, r) => q.eq("id", r.id),
     noDelete: true,   // lifting a ban goes through the moderate function, not row delete
     metrics: (rows) => [
       ["banned", rows.length],
-      ["this month", rows.filter((r) => r.created_at > new Date(Date.now() - 30 * 864e5).toISOString()).length],
+      ["this month", rows.filter((r) => withinDays(r.created_at, 30)).length],
     ],
     cols: [
       { key: "email", label: "Banned", wide: true },
@@ -397,11 +364,10 @@ const SCHEMAS = {
       { key: "banned_by", label: "By" },
       { key: "created_at", label: "When", type: "dt" },
     ],
-    rowAction: (r, api) => html`<button class="btn small ghost" onClick=${async () => {
-      if (!confirm(`Lift the ban on ${r.email}? They can sign in and be invited again (memberships are not restored).`)) return;
+    rowAction: (r, api) => html`<button class="btn sm ghost" onClick=${async () => {
+      if (!confirmDanger(`Lift the ban on ${r.email}? They can sign in and be invited again (memberships are not restored).`)) return;
       const res = await sendModerate(api.client, { action: "unban", email: r.email });
-      api.flash(res.error || `Unbanned ${r.email} ✓`);
-      if (!res.error) api.reload();
+      if (res.error) showError(api.flash, "Unban", res.error); else { api.flash(`Unbanned ${r.email} ✓`); api.reload(); }
     }}>Unban</button>`,
   },
 };
@@ -438,217 +404,46 @@ function EditCell({ row, col, ctx, onSave }) {
     ref=${(el) => el && setTimeout(() => { el.focus(); if (el.select) el.select(); }, 0)} />`;
 }
 
-/* owner-only moderation via the moderate edge function */
-export async function sendModerate(client, body) {
-  const { data, error } = await client.functions.invoke("moderate", { body });
-  if (error) {
-    let msg = error.message;
-    try { msg = (await error.context.json()).error || msg; } catch { /* keep generic */ }
-    return { error: msg };
-  }
-  return data || { ok: true };
-}
-
-/* invoke the invite edge function (service-role emails + membership) and
-   surface its real error message instead of the generic FunctionsHttpError */
-export async function sendInvite(client, body) {
-  const { data, error } = await client.functions.invoke("invite", { body });
-  if (error) {
-    let msg = error.message;
-    try { msg = (await error.context.json()).error || msg; } catch { /* keep generic */ }
-    return { error: msg };
-  }
-  return data || { ok: true };
-}
-
-/* ban an address that isn't sitting in a members row */
-function BanModal({ client, flash, onClose, onSaved }) {
-  const [f, setF] = useState({ email: "", reason: "" });
-  const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const save = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    const res = await sendModerate(client, { action: "ban", email: f.email.trim(), reason: f.reason.trim() || null });
-    setBusy(false);
-    if (res.error) { flash(res.error); return; }
-    flash(`Banned ${f.email.trim()} 🔨`);
-    onSaved();
-  };
-  return html`<${Modal} title="Ban a user" onClose=${onClose}>
-    <form onSubmit=${save}>
-      <div class="field"><label>Email</label>
-        <input type="email" required placeholder="them@email.com" value=${f.email} onInput=${set("email")} /></div>
-      <div class="field"><label>Reason</label>
-        <input value=${f.reason} onInput=${set("reason")} placeholder="Why — kept for the record" /></div>
-      <p class="tiny muted">They're signed out everywhere, can't sign back in, lose all memberships, and can't be re-invited until unbanned.</p>
-      <div class="actions">
-        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-        <button class="btn danger" disabled=${busy}>${busy ? "Banning…" : "Ban user"}</button>
-      </div>
-    </form>
-  </${Modal}>`;
-}
-
-/* new community from the god view — same seeding as Settings: the creator
-   becomes owner and lands in the roster; reload refreshes the pickers */
-function AddCommunityModal({ client, ctx, flash, onClose }) {
-  const [f, setF] = useState({ name: "", emoji: "", city: "nyc", description: "", price: "" });
-  const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const save = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    const { data, error } = await client.from("communities").insert({
-      name: f.name.trim(),
-      emoji: f.emoji.trim() || null,
-      city: f.city,
-      description: f.description.trim() || null,
-      membership_price_cents: Math.round((parseFloat(f.price) || 0) * 100),
-      owner_id: ctx.session.user.id,
-    }).select().single();
-    if (error) { setBusy(false); flash(error.message); return; }
-    // put the creator in the roster too
-    const { error: memErr } = await client.from("community_members").insert({ community_id: data.id, profile_id: ctx.session.user.id, status: "member" });
-    if (memErr) { setBusy(false); flash("Community created, but adding you as a member failed: " + memErr.message); return; }
-    flash("Community created 🎉");
-    setTimeout(() => location.reload(), 600);   // refresh pickers everywhere
-  };
-  return html`<${Modal} title="New community" onClose=${onClose}>
-    <form onSubmit=${save}>
-      <div class="fieldrow">
-        <div class="field" style="flex:0 0 90px"><label>Emoji</label><input value=${f.emoji} onInput=${set("emoji")} placeholder="🏘️" /></div>
-        <div class="field"><label>Name</label><input required value=${f.name} onInput=${set("name")} placeholder="Oyster Expedition" /></div>
-      </div>
-      <div class="fieldrow">
-        <div class="field"><label>City</label>
-          <select value=${f.city} onChange=${set("city")}>
-            ${CITIES.map(([v, l]) => html`<option value=${v}>${l}</option>`)}
-          </select></div>
-        <div class="field"><label>Membership $ / month</label>
-          <input type="number" min="0" step="0.01" value=${f.price} onInput=${set("price")} placeholder="0" /></div>
-      </div>
-      <div class="field"><label>Description</label><input value=${f.description} onInput=${set("description")} placeholder="What this crew is about" /></div>
-      <div class="actions">
-        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-        <button class="btn" disabled=${busy}>${busy ? "Creating…" : "Create community"}</button>
-      </div>
-    </form>
-  </${Modal}>`;
-}
-
-/* members need person+community chosen before the row can exist (composite
-   key). Two paths: invite somebody new by email (sends the branded magic-link
-   invite + attaches them), or add an existing profile directly. */
-function AddMemberModal({ client, ctx, flash, onClose, onSaved }) {
-  const [mode, setMode] = useState("email");
-  const [f, setF] = useState({ email: "", profile_id: "", community_id: ctx.communities[0]?.id || "", status: "member" });
-  const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const save = async (e) => {
-    e.preventDefault();
-    if (!f.community_id) { flash("Pick a community"); return; }
-    setBusy(true);
-    if (mode === "email") {
-      const r = await sendInvite(client, { email: f.email, kind: "member", community_id: f.community_id });
-      setBusy(false);
-      if (r.error) { flash(r.error); return; }
-      flash(r.existing ? "They already had an account — added, sign-in link sent 💌" : "Invite sent 💌");
-      onSaved();
-      return;
-    }
-    if (!f.profile_id) { setBusy(false); flash("Pick a person"); return; }
-    const { error } = await client.from("community_members").insert({
-      community_id: f.community_id, profile_id: f.profile_id, status: f.status, joined_at: new Date().toISOString() });
-    setBusy(false);
-    if (error) { flash(error.message.includes("duplicate") ? "They're already in that community" : error.message); return; }
-    flash("Member added ✓"); onSaved();
-  };
-  return html`<${Modal} title="Add member" onClose=${onClose}>
-    <div class="subnav" style="margin-bottom:14px">
-      <button class=${mode === "email" ? "on" : ""} onClick=${() => setMode("email")}>✉️ Invite by email</button>
-      <button class=${mode === "existing" ? "on" : ""} onClick=${() => setMode("existing")}>Add existing person</button>
-    </div>
-    <form onSubmit=${save}>
-      ${mode === "email"
-        ? html`<div class="field"><label>Email</label>
-            <input type="email" required placeholder="them@email.com" value=${f.email} onInput=${set("email")} />
-            <p class="tiny muted" style="margin:6px 0 0">They'll get a branded invite with a magic sign-in link that opens the app in this community.</p>
-          </div>`
-        : html`<div class="field"><label>Person</label>
-            <select required value=${f.profile_id} onChange=${set("profile_id")}>
-              <option value="">Choose…</option>
-              ${profOpts(ctx).map((o) => html`<option value=${o.v}>${o.l}</option>`)}
-            </select></div>`}
-      <div class="fieldrow">
-        <div class="field"><label>Community</label>
-          <select required value=${f.community_id} onChange=${set("community_id")}>
-            ${ctx.communities.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
-          </select></div>
-        ${mode === "existing" && html`<div class="field"><label>Status</label>
-          <select value=${f.status} onChange=${set("status")}>
-            <option value="member">member</option><option value="pending">pending</option>
-          </select></div>`}
-      </div>
-      <div class="actions">
-        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-        <button class="btn" disabled=${busy}>${busy ? "Sending…" : (mode === "email" ? "Send invite" : "Add member")}</button>
-      </div>
-    </form>
-  </${Modal}>`;
-}
-
-export function DataPage({ client, communities, session, flash, sub }) {
-  const tab = TABS.some(([k]) => k === sub) ? sub : "communities";
+export function DataPage({ client, communities, session, flash, sub, go }) {
+  const tab = PAGE.data.tabs.some(([k]) => k === sub) ? sub : "communities";
   const S = SCHEMAS[tab];
-  const [rows, setRows] = useState(null);   // null = loading
-  const [profiles, setProfiles] = useState([]);
   const [q, setQ] = useState("");
   const [comm, setComm] = useState("");
   const [sort, setSort] = useState({ key: null, dir: 1 });
   const [adding, setAdding] = useState(false);
 
-  const ctx = { communities, profiles, session };
-
   // one profile roster powers the author/member pickers on every tab
-  useEffect(() => {
-    let live = true;
-    client.from("profiles").select("id,display_name,avatar_url").order("display_name").limit(2000)
-      .then(({ data }) => { if (live) setProfiles(data || []); });
-    return () => { live = false; };
-  }, [client]);
+  const { data: profiles } = useLoader(() => all(() => client.from("profiles").select(COLS.profileMin).order("display_name")), [client], { flash, where: "People roster" });
+  const { data: rows, error, reload, setData } = useLoader(() => S.load(client), [client, tab], { flash, where: "Data · " + tab });
+  useEffect(() => { setSort({ key: null, dir: 1 }); setQ(""); }, [tab]);
 
-  const load = useCallback(async () => {
-    const { data, error } = await S.load(client);
-    if (error) flash(error.message);
-    setRows(data || []);
-  }, [client, tab]);
-  useEffect(() => { setRows(null); setSort({ key: null, dir: 1 }); setQ(""); load(); }, [load]);
+  const ctx = { communities, profiles: profiles || [], session };
+  const api = { client, flash, reload, go };
 
   const save = async (row, key, val) => {
     const patch = { [key]: val, ...(S.derive ? S.derive(key, val, ctx) : {}) };
-    const { error } = await S.match(client.from(S.table).update(patch), row);
-    if (error) { flash(error.message); return; }
+    const { error: e } = await S.match(client.from(S.table).update(patch), row);
+    if (e) { showError(flash, "Save", e); return; }
     const col = S.cols.find((c) => c.key === key);
-    if (col?.join) load();   // joined display (author/member name) needs a refetch
-    else setRows((rs) => rs.map((r) => (r === row ? { ...r, ...patch } : r)));
+    if (col?.join) reload();   // joined display (author/member name) needs a refetch
+    else setData((rs) => rs.map((r) => (r === row ? { ...r, ...patch } : r)));
     flash("Saved ✓");
   };
   const del = async (row) => {
     const name = row.title || row.body?.slice(0, 40) || row.profile?.display_name || "this row";
-    if (!confirm(`Delete "${name}"? This removes it from the live app.`)) return;
-    const { error } = await S.match(client.from(S.table).delete(), row);
-    if (error) { flash(error.message); return; }
+    if (!confirmDanger(`Delete "${name}"? This removes it from the live app.`)) return;
+    const { error: e } = await S.match(client.from(S.table).delete(), row);
+    if (e) { showError(flash, "Delete", e); return; }
     if (S.afterDelete) await S.afterDelete(client, row);
-    setRows((rs) => rs.filter((r) => r !== row));
+    setData((rs) => rs.filter((r) => r !== row));
     flash("Deleted");
   };
   const addNew = async () => {
     if (S.modalCreate) { setAdding(true); return; }
-    const { error } = await S.create(client, ctx);
-    if (error) { flash(error.message); return; }
+    const { error: e } = await S.create(client, ctx);
+    if (e) { showError(flash, "Add row", e); return; }
     flash("Row added — edit it inline ✏️");
-    load();
+    reload();
   };
 
   const filtered = useMemo(() => {
@@ -680,18 +475,13 @@ export function DataPage({ client, communities, session, flash, sub }) {
 
   const metrics = useMemo(() => S.metrics(rows || []), [rows, tab]);
 
-  return html`<div class="page">
-    <div class="pagehead">
-      <h2>Data <span class="muted" style="font:400 13px var(--body)">every community, live tables — you have full permissions here</span></h2>
-    </div>
-    <div class="subnav" style="margin-bottom:12px">
-      ${TABS.map(([k, label]) => html`<button class=${tab === k ? "on" : ""} onClick=${() => { location.hash = "/data/" + k; }}>${label}</button>`)}
-    </div>
+  return html`<${Page} title="Data" sub="every community, live tables — you have full permissions here">
+    <${Tabs} page="data" current=${tab} go=${go} />
 
     <div class="dt-metrics">
-      ${metrics.map(([l, n]) => html`<div class="metric"><div class="n">${rows === null ? "…" : n}</div><div class="l">${l}</div></div>`)}
-      <div style="flex:1"></div>
-      ${S.newLabel && html`<button class="btn small" onClick=${addNew}>${S.newLabel}</button>`}
+      <${Metrics} size="sm" loading=${rows === null} items=${metrics} />
+      <div class="u-grow"></div>
+      ${S.newLabel && html`<button class="btn sm" onClick=${addNew}>${S.newLabel}</button>`}
       <input class="dt-search" placeholder="Search ${tab}…" value=${q} onInput=${(e) => setQ(e.target.value)} />
       <select class="commselect" value=${comm} onChange=${(e) => setComm(e.target.value)}>
         <option value="">All communities</option>
@@ -700,10 +490,11 @@ export function DataPage({ client, communities, session, flash, sub }) {
       </select>
     </div>
 
+    ${error && html`<${LoadError} what=${tab} error=${error} onRetry=${reload} />`}
     <div class="dt-wrap">
       <table class="dt">
         <thead><tr>
-          ${S.cols.map((c) => html`<th class=${c.wide ? "wide" : ""}
+          ${S.cols.map((c) => html`<th class=${c.wide ? "wide" : ""} aria-sort=${sort.key === c.key ? (sort.dir > 0 ? "ascending" : "descending") : undefined}
             onClick=${() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : 1 }))}>
             ${c.label}${sort.key === c.key ? (sort.dir > 0 ? " ↑" : " ↓") : ""}</th>`)}
           <th style="width:40px"></th>
@@ -713,26 +504,25 @@ export function DataPage({ client, communities, session, flash, sub }) {
             ${S.cols.map((c) => html`<td class=${"editable" + (c.wide ? " wide" : "")}>
               <${EditCell} row=${r} col=${c} ctx=${ctx} onSave=${(k, v) => save(r, k, v)} />
             </td>`)}
-            <td><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end;padding-right:4px">
-              ${S.rowAction && S.rowAction(r, { client, flash, reload: load })}
-              ${!S.noDelete && html`<button class="dt-del" title="Delete" onClick=${() => del(r)}>✕</button>`}
+            <td><div class="rowactions" style="padding-right:4px;gap:4px">
+              ${S.rowAction && S.rowAction(r, api)}
+              ${!S.noDelete && html`<button class="dt-del" title="Delete" aria-label="Delete row" onClick=${() => del(r)}>✕</button>`}
             </div></td>
           </tr>`)}
         </tbody>
       </table>
-      ${rows === null && html`<div class="empty" style="border:0">Loading…</div>`}
-      ${rows !== null && filtered.length === 0 && html`<div class="empty" style="border:0">No rows${q || comm ? " match" : ""}.</div>`}
+      ${rows === null && html`<${Loading} />`}
+      ${rows !== null && filtered.length === 0 && html`<${Empty} bare>No rows${q || comm ? " match" : ""}.</${Empty}>`}
     </div>
     <p class="tiny muted" style="margin-top:8px">${filtered.length} row${filtered.length === 1 ? "" : "s"}${S.cols.some((c) => c.edit)
       ? " · every cell is editable — click one; changes go live in the app instantly."
       : " · read-only view" + (tab === "dms" ? " — message bodies live in Moderation, where they can be hidden or removed." : ".")}</p>
 
     ${adding && (tab === "communities"
-      ? html`<${AddCommunityModal} client=${client} ctx=${ctx} flash=${flash} onClose=${() => setAdding(false)} />`
+      ? html`<${CommunityModal} client=${client} session=${session} flash=${flash} onClose=${() => setAdding(false)} />`
       : tab === "bans"
-      ? html`<${BanModal} client=${client} flash=${flash}
-          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`
-      : html`<${AddMemberModal} client=${client} ctx=${ctx} flash=${flash}
-          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`)}
-  </div>`;
+      ? html`<${BanModal} client=${client} flash=${flash} onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`
+      : html`<${InviteModal} client=${client} communities=${communities} profiles=${profiles || []} flash=${flash}
+          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`)}
+  </${Page}>`;
 }
