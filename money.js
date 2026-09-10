@@ -1,99 +1,89 @@
-import { useState, useEffect, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, moneyExact, money, niceDate, todayStr } from "./ui.js?v=__V__";
+import { useState } from "https://esm.sh/preact@10.23.2/hooks";
+import { html, Modal, Page, Metrics, Pill, Loading, Empty, LoadError, moneyExact, money, niceDate, shortDateTime, todayStr, monthStartStr, toCents, confirmDanger } from "./ui.js?v=__V__";
+import { useLoader, paged, inChunks, firstError, showError } from "./db.js?v=__V__";
 
 /* Phase 1 money = display-only: a manual ledger of income (event fees, POI
-   partnerships, other), plus computed membership revenue. Stripe comes later. */
+   partnerships, other), plus computed membership revenue. Stripe comes later.
+   Maker bookings (paid straight to makers who are members here) are shown
+   beside the ledger, not added to it. */
 
 const KINDS = { membership: "💳 Membership", event: "🎟️ Event", poi: "📍 POI", other: "✨ Other" };
+const BOOKING_COLS = "id,maker_id,booker_id,starts_at,ends_at,note,status,pay_mode,amount_cents,paid,created_at";
 
 export function MoneyPage({ client, community, session, flash }) {
-  const [rows, setRows] = useState(null);   // null = loading
   const [adding, setAdding] = useState(false);
-  const [memberCount, setMemberCount] = useState(0);
-  const [bookings, setBookings] = useState(null);   // maker bookings where the maker is one of this community's members
-  const [names, setNames] = useState({});
 
-  const load = useCallback(async () => {
-    const [{ data }, { count }, mem] = await Promise.all([
+  const { data, error, reload } = useLoader(async () => {
+    const [led, cnt, mem] = await Promise.all([
       client.from("ledger").select("*").eq("community_id", community.id).order("happened_on", { ascending: false }).limit(400),
-      client.from("community_members").select("*", { count: "exact", head: true }).eq("community_id", community.id).eq("status", "member"),
-      client.from("community_members").select("profile_id").eq("community_id", community.id).neq("status", "pending"),
+      client.from("community_members").select("profile_id", { count: "exact", head: true }).eq("community_id", community.id).eq("status", "member"),
+      paged((a, b) => client.from("community_members").select("profile_id").eq("community_id", community.id).neq("status", "pending").range(a, b)),
     ]);
-    setRows(data || []); setMemberCount(count || 0);
+    const err = firstError([led, cnt, mem]); if (err) return { error: err };
     const ids = (mem.data || []).map((m) => m.profile_id);
-    if (!ids.length) { setBookings([]); return; }
-    const { data: bk, error } = await client.from("bookings").select("*").in("maker_id", ids).order("starts_at", { ascending: false }).limit(200);
-    if (error) { flash("Bookings: " + error.message); setBookings([]); return; }
-    const who = [...new Set((bk || []).flatMap((b) => [b.maker_id, b.booker_id]).filter(Boolean))];
-    const { data: profs } = who.length ? await client.from("profiles").select("id,display_name").in("id", who) : { data: [] };
-    setNames(Object.fromEntries((profs || []).map((p) => [p.id, p.display_name || "—"])));
-    setBookings(bk || []);
-  }, [client, community.id]);
-  useEffect(() => { load(); }, [load]);
+    const bk = ids.length ? await inChunks(ids, 150, (chunk) => client.from("bookings").select(BOOKING_COLS).in("maker_id", chunk).order("starts_at", { ascending: false }).limit(200)) : { data: [] };
+    if (bk.error) return { error: bk.error };
+    const who = [...new Set(bk.data.flatMap((b) => [b.maker_id, b.booker_id]).filter(Boolean))];
+    const pr = who.length ? await inChunks(who, 150, (c) => client.from("profiles").select("id,display_name").in("id", c)) : { data: [] };
+    return { data: { rows: led.data || [], memberCount: cnt.count || 0, bookings: bk.data, names: Object.fromEntries((pr.data || []).map((p) => [p.id, p.display_name || "—"])) } };
+  }, [client, community.id], { flash, where: "Money", client, realtime: [{ table: "bookings" }] });
 
-  const monthStart = useMemo(() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); }, []);
-  const monthSum = (rows || []).filter((r) => r.happened_on >= monthStart).reduce((a, r) => a + r.amount_cents, 0);
-  const membershipMo = memberCount * (community.membership_price_cents || 0);
-  const bkMonth = (bookings || []).filter((b) => b.paid && (b.starts_at || b.created_at) >= monthStart).reduce((a, b) => a + (b.amount_cents || 0), 0);
-  const bkUnpaid = (bookings || []).filter((b) => !b.paid && b.status !== "cancelled").reduce((a, b) => a + (b.amount_cents || 0), 0);
-  const when = (iso) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso || "—"; } };
+  const loading = data === null;
+  const d = data && !Array.isArray(data) ? data : { rows: [], bookings: [], names: {}, memberCount: 0 };
+  const monthStart = monthStartStr();
+  const monthSum = d.rows.filter((r) => r.happened_on >= monthStart).reduce((a, r) => a + r.amount_cents, 0);
+  const membershipMo = d.memberCount * (community.membership_price_cents || 0);
+  const bkMonth = d.bookings.filter((b) => b.paid && (b.starts_at || b.created_at) >= monthStart).reduce((a, b) => a + (b.amount_cents || 0), 0);
+  const bkUnpaid = d.bookings.filter((b) => !b.paid && !/cancel/.test(b.status || "")).reduce((a, b) => a + (b.amount_cents || 0), 0);
 
   const remove = async (r) => {
-    if (!confirm("Delete this entry?")) return;
-    const { error } = await client.from("ledger").delete().eq("id", r.id);
-    if (error) flash(error.message); else { flash("Deleted"); load(); }
+    if (!confirmDanger("Delete this entry?")) return;
+    const { error: e } = await client.from("ledger").delete().eq("id", r.id);
+    if (e) showError(flash, "Delete", e); else { flash("Deleted"); reload(); }
   };
 
-  return html`<div class="page">
-    <div class="pagehead">
-      <h2 style="margin:0">Money</h2>
-      <button class="btn" onClick=${() => setAdding(true)}>+ Log income</button>
-    </div>
-    <div class="stats" style="grid-template-columns:repeat(3,1fr);max-width:760px">
-      <div class="stat"><div class="lab">Memberships / mo</div><div class="num money">${rows === null ? "…" : money(membershipMo)}</div>
-        <div class="tiny muted">${memberCount} members × ${moneyExact(community.membership_price_cents || 0)}</div></div>
-      <div class="stat"><div class="lab">Logged this month</div><div class="num money">${rows === null ? "…" : money(monthSum)}</div></div>
-      <div class="stat"><div class="lab">Total / mo</div><div class="num money">${rows === null ? "…" : money(membershipMo + monthSum)}</div></div>
-    </div>
+  return html`<${Page} title="Money" actions=${html`<button class="btn" onClick=${() => setAdding(true)}>+ Log income</button>`}>
+    <${Metrics} loading=${loading} items=${[
+      ["Memberships / mo", money(membershipMo), { money: true, sub: `${d.memberCount} members × ${moneyExact(community.membership_price_cents || 0)}` }],
+      ["Logged this month", money(monthSum), { money: true }],
+      ["Total / mo", money(membershipMo + monthSum), { money: true }],
+    ]} />
     <p class="tiny muted">Phase 1 is a manual ledger — real payments (Stripe) come later. Membership price is set in Settings.</p>
-    <table class="table">
-      <thead><tr><th>Date</th><th>Kind</th><th>Label</th><th style="text-align:right">Amount</th><th></th></tr></thead>
-      <tbody>
-        ${(rows || []).map((r) => html`<tr>
-          <td class="muted">${niceDate(r.happened_on)}</td>
-          <td>${KINDS[r.kind] || r.kind}</td>
-          <td>${r.label || "—"}</td>
-          <td style="text-align:right;font-weight:600;color:var(--green)">${moneyExact(r.amount_cents)}</td>
-          <td class="rowactions"><button class="linkbtn tiny" onClick=${() => remove(r)}>delete</button></td>
-        </tr>`)}
-      </tbody>
-    </table>
-    ${rows === null && html`<div class="empty" style="border:0;margin-top:12px">Loading…</div>`}
-    ${rows !== null && rows.length === 0 && html`<div class="empty" style="margin-top:12px">No income logged yet.</div>`}
+    ${error ? html`<${LoadError} what="the ledger" error=${error} onRetry=${reload} />`
+      : loading ? html`<${Loading} />`
+      : d.rows.length === 0 ? html`<${Empty} mt>No income logged yet.</${Empty}>`
+      : html`<table class="table">
+          <thead><tr><th>Date</th><th>Kind</th><th>Label</th><th class="u-right">Amount</th><th></th></tr></thead>
+          <tbody>${d.rows.map((r) => html`<tr>
+            <td class="muted">${niceDate(r.happened_on)}</td>
+            <td>${KINDS[r.kind] || r.kind}</td>
+            <td>${r.label || "—"}</td>
+            <td class="amt">${moneyExact(r.amount_cents)}</td>
+            <td class="actions"><button class="btn link tiny" onClick=${() => remove(r)}>delete</button></td>
+          </tr>`)}</tbody>
+        </table>`}
 
-    <div class="section-label" style="margin-top:34px">Maker bookings <span class="muted" style="font:400 12px var(--body)">— paid directly to makers who are members here (not part of the ledger)</span></div>
-    <div class="stats" style="grid-template-columns:repeat(3,1fr);max-width:760px">
-      <div class="stat"><div class="lab">Booked</div><div class="num">${bookings === null ? "…" : bookings.length}</div></div>
-      <div class="stat"><div class="lab">Paid this month</div><div class="num money">${bookings === null ? "…" : moneyExact(bkMonth)}</div></div>
-      <div class="stat"><div class="lab">Unpaid / open</div><div class="num" style="color:#6d682f">${bookings === null ? "…" : moneyExact(bkUnpaid)}</div></div>
-    </div>
-    ${bookings !== null && bookings.length > 0 && html`<table class="table">
-      <thead><tr><th>When</th><th>Maker</th><th>Booked by</th><th>Status</th><th style="text-align:right">Amount</th><th>Paid</th></tr></thead>
-      <tbody>
-        ${bookings.map((b) => html`<tr>
-          <td class="muted">${when(b.starts_at || b.created_at)}</td>
-          <td><b>${names[b.maker_id] || "—"}</b></td>
-          <td>${names[b.booker_id] || "—"}</td>
-          <td><span class=${"pillstat " + (b.status === "confirmed" ? "member" : b.status === "cancelled" ? "danger" : "pending")}>${b.status || "—"}</span></td>
-          <td style="text-align:right;font-weight:600">${b.amount_cents ? moneyExact(b.amount_cents) : "—"}${b.pay_mode ? html` <span class="muted tiny">${b.pay_mode}</span>` : ""}</td>
-          <td>${b.paid ? "✓" : html`<span class="muted">—</span>`}</td>
-        </tr>`)}
-      </tbody>
+    <div class="section-label u-mt-3">Maker bookings <span class="sub">— paid directly to makers who are members here (not part of the ledger)</span></div>
+    <${Metrics} loading=${loading} items=${[
+      ["Booked", d.bookings.length],
+      ["Paid this month", moneyExact(bkMonth), { money: true }],
+      ["Unpaid / open", moneyExact(bkUnpaid), { tone: bkUnpaid ? "warn" : "" }],
+    ]} />
+    ${!loading && d.bookings.length > 0 && html`<table class="table">
+      <thead><tr><th>When</th><th>Maker</th><th>Booked by</th><th>Status</th><th class="u-right">Amount</th><th>Paid</th></tr></thead>
+      <tbody>${d.bookings.map((b) => html`<tr>
+        <td class="muted">${shortDateTime(b.starts_at || b.created_at)}</td>
+        <td><b>${d.names[b.maker_id] || "—"}</b></td>
+        <td>${d.names[b.booker_id] || "—"}</td>
+        <td><${Pill}>${b.status || "—"}</${Pill}></td>
+        <td class="amt" style="color:inherit">${b.amount_cents ? moneyExact(b.amount_cents) : "—"}${b.pay_mode ? html` <span class="muted tiny">${b.pay_mode}</span>` : ""}</td>
+        <td>${b.paid ? "✓" : html`<span class="muted">—</span>`}</td>
+      </tr>`)}</tbody>
     </table>`}
-    ${bookings !== null && bookings.length === 0 && html`<p class="tiny muted">No maker bookings for this community's members yet.</p>`}
+    ${!loading && !error && d.bookings.length === 0 && html`<p class="tiny muted">No maker bookings for this community's members yet.</p>`}
     ${adding && html`<${AddModal} client=${client} community=${community} session=${session} flash=${flash}
-      onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); load(); }} />`}
-  </div>`;
+      onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`}
+  </${Page}>`;
 }
 
 function AddModal({ client, community, session, flash, onClose, onSaved }) {
@@ -101,13 +91,13 @@ function AddModal({ client, community, session, flash, onClose, onSaved }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = async (e) => {
     e.preventDefault();
-    const cents = Math.round(parseFloat(f.amount || "0") * 100);
+    const cents = toCents(f.amount);
     if (!cents) { flash("Enter an amount"); return; }
     const { error } = await client.from("ledger").insert({
       community_id: community.id, kind: f.kind, label: f.label.trim() || null,
       amount_cents: cents, happened_on: f.happened_on, created_by: session.user.id,
     });
-    if (error) flash(error.message); else { flash("Logged 💚"); onSaved(); }
+    if (error) showError(flash, "Log income", error); else { flash("Logged 💚"); onSaved(); }
   };
   return html`<${Modal} title="Log income" onClose=${onClose}>
     <form onSubmit=${save}>

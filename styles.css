@@ -688,6 +688,10 @@ a { color: inherit; }
 .tone-ok { color: var(--ok-ink); } .tone-warn { color: var(--warn-ink); } .tone-bad { color: var(--bad); }
 .amt { text-align: right; font-weight: 600; color: var(--ok-ink); font-variant-numeric: tabular-nums; }
 .who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.inset { background: var(--paper); border-radius: var(--r-sm); padding: 14px; }
+.narrow { max-width: 560px; }
+.section-label .sub { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 4px; }
+.tabs .subnav { align-items: center; }
 /* dark stage: the same token names, re-pointed — components don't change */
 .stage-dark { --paper: #150f0c; --surface: rgba(28,21,17,.82); --surface-2: #2a211c; --wash: rgba(251,246,240,.08);
   --line: rgba(251,246,240,.10); --line-2: rgba(251,246,240,.14); --ink: #fbf6f0; --ink-2: #c9bfb4; --muted: #a3968c; --faint: #6f645b;

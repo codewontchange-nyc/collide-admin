@@ -32,6 +32,8 @@ export const BRAND = {
 export const CATEGORICAL = [BRAND.rose, BRAND.tealBright, BRAND.amber, BRAND.purple, BRAND.blue, "#7cc242", "#f27d3a", "#e6c14a", "#d95bb6", "#39c2d7", "#a3e078", "#ff8fa3"];
 export const CITY_COLOR = { nyc: BRAND.rose, atl: BRAND.tealBright, la: BRAND.amber, chi: BRAND.blue, sf: BRAND.purple, nola: "#f27d3a", dc: "#39c2d7", global: BRAND.amber };
 export const cityColor = (id) => CITY_COLOR[id] || BRAND.faint;
+// the city a row inherits from its community (members only see their city's posts)
+export const stampCity = (communities, communityId) => (communities || []).find((c) => c.id === communityId)?.city || DEFAULT_CITY;
 
 export const EVENT_CATEGORIES = [
   { key: "food", label: "🍽️ Food" }, { key: "coffee", label: "☕ Coffee" },

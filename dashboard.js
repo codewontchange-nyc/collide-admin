@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=__V__";
+import { html, Avatar, Tabs, money, niceDate, niceTime, mediaUrl, todayStr } from "./ui.js?v=__V__";
+import { PAGE } from "./routes.js?v=__V__";
 import { EventsPage } from "./events.js?v=__V__";
 import { AnnouncementsPage } from "./announcements.js?v=__V__";
 import { MembersPage } from "./members.js?v=__V__";
@@ -15,17 +16,6 @@ import { PartnershipsPage } from "./partnerships.js?v=__V__";
    it's shared app-wide. */
 
 const PHONE_W = 390, PHONE_H = 844;   // standard HD device points
-
-const TABS = [
-  ["home", "Dashboard"],
-  ["announcements", "Announcements"],
-  ["events", "Events"],
-  ["members", "Members"],
-  ["money", "Money"],
-  ["meals", "Meals"],
-  ["settings", "Settings"],
-  ["partnerships", "Partnerships"],
-];
 
 function PhonePreview() {
   const wrap = useRef(null);
@@ -51,21 +41,19 @@ function PhonePreview() {
 
 export function Dashboard(props) {
   const { go, sub, community, communities, pickComm } = props;
-  const tab = TABS.some(([k]) => k === sub) ? sub : "home";
+  const tab = PAGE.dashboard.tabs.some(([k]) => k === sub && k) ? sub : "home";
   const pickable = (communities || []).filter((c) => !c.archived_at || c.id === community.id);
   return html`<div class="dash2">
     <${PhonePreview} />
     <div class="dash-right">
-      <div class="subnav" style="align-items:center">
+      <${Tabs} page="dashboard" current=${tab === "home" ? "" : tab} go=${go}>
         ${pickable.length > 1
           ? html`<select class="commselect" value=${community.id} onChange=${(e) => pickComm(e.target.value)}
               title="Viewing this community's slice — how its facilitators see the platform">
               ${pickable.map((c) => html`<option value=${c.id}>${c.archived_at ? "🗂 " : ""}${c.name}</option>`)}
             </select>`
           : null}
-        ${TABS.map(([k, label]) => html`<button class=${tab === k ? "on" : ""}
-          onClick=${() => go(k === "home" ? "dashboard" : "dashboard/" + k)}>${label}</button>`)}
-      </div>
+      </${Tabs}>
       ${tab === "home" ? html`<${DashHome} key=${community.id} ...${props} />`
         : tab === "announcements" ? html`<${AnnouncementsPage} key=${community.id} ...${props} />`
         : tab === "events" ? html`<${EventsPage} key=${community.id} ...${props} />`

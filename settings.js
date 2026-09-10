@@ -1,12 +1,14 @@
 import { useState } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, CITIES } from "./ui.js?v=__V__";
+import { html, Page, CITIES, DEFAULT_CITY, toCents } from "./ui.js?v=__V__";
+import { showError } from "./db.js?v=__V__";
+import { CommunityModal } from "./modals.js?v=__V__";
 
 export function SettingsPage({ client, community, isOwner, session, flash }) {
   const [f, setF] = useState({
     name: community.name || "",
     description: community.description || "",
     price: community.membership_price_cents ? (community.membership_price_cents / 100) : "",
-    city: community.city || "nyc",
+    city: community.city || DEFAULT_CITY,
   });
   const [creating, setCreating] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -16,16 +18,15 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
     const { error } = await client.from("communities").update({
       name: f.name.trim(),
       description: f.description.trim() || null,
-      membership_price_cents: Math.round((parseFloat(f.price) || 0) * 100),
+      membership_price_cents: toCents(f.price),
       city: f.city,
     }).eq("id", community.id);
-    if (error) flash(error.message);
-    else { flash("Saved — refresh to see it everywhere"); }
+    if (error) showError(flash, "Settings", error);
+    else flash("Saved — refresh to see it everywhere");
   };
 
-  return html`<div class="page">
-    <div style="max-width:560px">
-    <h2>Settings</h2>
+  return html`<${Page} title="Settings">
+    <div class="narrow">
     <form onSubmit=${save}>
       <div class="field"><label>Community name</label><input required value=${f.name} onInput=${set("name")} /></div>
       <div class="field"><label>Description</label><textarea rows="3" value=${f.description} onInput=${set("description")}></textarea></div>
@@ -40,37 +41,12 @@ export function SettingsPage({ client, community, isOwner, session, flash }) {
         <button class="btn">Save settings</button>
       </div>
     </form>
-    ${isOwner && html`<div style="margin-top:36px;padding-top:20px;border-top:1px solid var(--line)">
+    ${isOwner && html`<div class="u-mt-3" style="padding-top:20px;border-top:1px solid var(--line)">
       <div class="section-label">Owner tools</div>
       <button class="btn ghost" onClick=${() => setCreating(true)}>+ Create a new community</button>
-      <p class="tiny muted" style="margin-top:8px">Facilitators are managed per-community on the Members page.</p>
+      <p class="tiny muted u-mt-1">Facilitators are managed per-community on the Members page.</p>
     </div>`}
-    ${creating && html`<${CreateModal} client=${client} session=${session} flash=${flash} onClose=${() => setCreating(false)} />`}
+    ${creating && html`<${CommunityModal} client=${client} session=${session} flash=${flash} onClose=${() => setCreating(false)} />`}
     </div>
-  </div>`;
-}
-
-function CreateModal({ client, session, flash, onClose }) {
-  const [name, setName] = useState("");
-  const save = async (e) => {
-    e.preventDefault();
-    const { data, error } = await client.from("communities")
-      .insert({ name: name.trim(), owner_id: session.user.id }).select().single();
-    if (error) { flash(error.message); return; }
-    // put the creator in the roster too
-    const { error: memErr } = await client.from("community_members").insert({ community_id: data.id, profile_id: session.user.id, status: "member" });
-    if (memErr) { flash("Community made, but adding you as a member failed: " + memErr.message); return; }
-    localStorage.setItem("ca.comm", data.id);
-    flash("Community created 🎉");
-    location.reload();
-  };
-  return html`<${Modal} title="New community" onClose=${onClose}>
-    <form onSubmit=${save}>
-      <div class="field"><label>Name</label><input required value=${name} onInput=${(e) => setName(e.target.value)} placeholder="Oyster Expedition" /></div>
-      <div class="actions">
-        <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
-        <button class="btn">Create</button>
-      </div>
-    </form>
-  </${Modal}>`;
+  </${Page}>`;
 }
