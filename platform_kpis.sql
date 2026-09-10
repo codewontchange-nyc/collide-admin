@@ -39,14 +39,14 @@ returns jsonb language sql stable security definer set search_path = public as $
     'touches_wk',       (select count(*) from crm_touches where sent_at > now() - interval '7 days'),
 
     -- revenue (display ledger + membership run-rate, like the top bar)
-    'mrr_cents',
-      (select coalesce(sum(c.membership_price_cents * mm.cnt), 0)
-         from communities c
-         join lateral (select count(*) cnt from community_members m
-                       where m.community_id = c.id and m.status = 'member') mm on true
-        where c.archived_at is null)
-      + (select coalesce(sum(amount_cents), 0) from ledger
-          where happened_on >= date_trunc('month', now())::date)
+    -- q96: real MRR from Stripe-mirrored subscriptions (billing_livemode() picks test vs live rows)
+    'mrr_cents',       (select coalesce(sum(unit_amount_cents), 0) from subscriptions
+                         where sub_live(status, current_period_end) and livemode = billing_livemode()),
+    'active_subs',     (select count(*) from subscriptions where sub_live(status, current_period_end) and livemode = billing_livemode()),
+    'trialing_makers', (select count(*) from subscriptions where plan = 'maker' and status = 'trialing' and livemode = billing_livemode()),
+    'past_due',        (select count(*) from subscriptions where status in ('past_due','unpaid') and livemode = billing_livemode()),
+    'ledger_month_cents', (select coalesce(sum(amount_cents), 0) from ledger
+                            where happened_on >= date_trunc('month', now())::date)
   ) else null end;
 $$;
 grant execute on function platform_kpis() to authenticated;

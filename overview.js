@@ -21,7 +21,7 @@ function KpiStrip({ k }) {
     { n: k.circles_wk, l: "new circles", d: html`<${Delta} now=${k.circles_wk} prev=${k.circles_prev} />` },
     { n: k.events_upcoming, l: "events upcoming" },
     { n: k.invites_sent > 0 ? pct(k.invites_accepted, k.invites_sent) : "—", l: "invite accept", s: `${k.invites_accepted}/${k.invites_sent} accepted` },
-    { n: money(k.mrr_cents), l: "revenue / mo", money: true },
+    { n: money(k.mrr_cents), l: "MRR", money: true, s: k.active_subs != null ? `${k.active_subs} plans · ${k.past_due || 0} past due` : "membership run-rate" },
   ];
   return html`<div class="kpis">
     ${tiles.map((t) => html`<div class="kpi">

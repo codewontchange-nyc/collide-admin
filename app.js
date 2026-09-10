@@ -13,6 +13,7 @@ import { AdsPage } from "./ads.js?v=45";
 import { ModerationPage } from "./moderation.js?v=45";
 import { CanvasPage } from "./canvasflow.js?v=45";
 import { NetworkPage } from "./network.js?v=45";
+import { BillingPage } from "./billing.js?v=46";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -65,8 +66,8 @@ const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]'
    community's slice — exactly what a facilitator gets when they log in,
    toggled by the community picker), and the shared Map (app-wide). All the
    facilitator sections live as tabs inside Dashboard. */
-const PAGES = ["overview", "dashboard", "map", "network", "upnext", "canvas", "data", "crm", "mod", "ads", "issues"];
-const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", network: "Network", data: "Data", crm: "CRM", mod: "Moderation", canvas: "UX Onboarding", ads: "Ads", issues: "Issues", upnext: "Up Next" };
+const PAGES = ["overview", "dashboard", "map", "network", "upnext", "canvas", "data", "crm", "billing", "mod", "ads", "issues"];
+const PAGE_LABEL = { overview: "Overview", dashboard: "Dashboard", map: "Map", network: "Network", data: "Data", crm: "CRM", billing: "Billing", mod: "Moderation", canvas: "UX Onboarding", ads: "Ads", issues: "Issues", upnext: "Up Next" };
 const DASH_SUBS = ["announcements", "events", "members", "money", "meals", "settings", "partnerships"];
 const DATA_SUBS = ["communities", "people", "announcements", "events", "members", "facilitators", "circles", "dms", "invites", "bans"];
 const CRM_SUBS = ["funnel", "campaigns", "activity"];
@@ -247,7 +248,7 @@ function App() {
     <div class="topbar">
       <span class="wordmark" onClick=${() => go("overview")} title="All communities" style="cursor:pointer">collide</span>
       <div class="nav">
-        ${PAGES.filter((p) => (p !== "data" && p !== "crm" && p !== "mod" && p !== "network") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
+        ${PAGES.filter((p) => (p !== "data" && p !== "crm" && p !== "mod" && p !== "network" && p !== "billing") || isOwner).map((p) => html`<button class=${page === p ? "on" : ""} onClick=${() => go(p)}>${PAGE_LABEL[p]}</button>`)}
       </div>
       <${PushBell} session=${session} flash=${flash} />
       <${Avatar} profile=${profile || { display_name: session.user.email }} />
@@ -270,6 +271,10 @@ function App() {
         ? (isOwner
           ? html`<${CRMPage} ...${ctx} sub=${route.sub} />`   /* funnel + drips — owners only */
           : html`<div class="empty">The CRM is owner-only.</div>`)
+        : page === "billing"
+        ? (isOwner
+          ? html`<${BillingPage} ...${ctx} />`   /* Collide's Stripe plans — owners only */
+          : html`<div class="empty">Billing is owner-only.</div>`)
         : page === "canvas"
         ? html`<${CanvasPage} ...${ctx} />`     /* figma-style onboarding flow editor — staff */
         : page === "mod"
