@@ -44,7 +44,7 @@ jobs:
           sed -i -E "s/\?v=(__V__|[0-9]+)/?v=${V}/g" *.js index.html
           grep -q "app.js?v=${V}" index.html || { echo "::error::index.html not stamped"; exit 1; }
           grep -q "ui.js?v=${V}" app.js      || { echo "::error::app.js imports not stamped"; exit 1; }
-          if grep -rqE '\?v=(__V__|[0-9]+)' *.js index.html; then echo "::error::unstamped ?v= remains"; exit 1; fi
+          if grep -rqE '\?v=(__V__|[0-9]+)"' *.js index.html; then echo "::error::unstamped ?v= remains"; exit 1; fi   # every ref ends in a quote; a SHA may start with digits
           echo "stamped ?v=${V}"
 
       - name: Write config.js from secrets
