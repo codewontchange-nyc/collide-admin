@@ -156,7 +156,7 @@ function RosterModal({ client, event, flash, onClose }) {
    placed with a click. The dotted trail is drawn with the same curve the app
    uses, so what you see here is what members see. Saves back into
    activities.itinerary, touching only x/y. */
-function StopsModal({ client, event, community, flash, onClose, onSaved }) {
+export function StopsModal({ client, event, community, flash, onClose, onSaved }) {
   const city = event.city || community?.city || DEFAULT_CITY;
   const [stops, setStops] = useState(() => (event.itinerary || []).map((s) => ({ ...s })));
   const [placing, setPlacing] = useState(null);   // index waiting for a click on the map

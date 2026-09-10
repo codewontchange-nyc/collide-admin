@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, wobblePath, confirmDanger } from "./ui.js?v=__V__";
 import { useLoader, paged, storageUrl, BUCKETS, firstError, showError } from "./db.js?v=__V__";
 import { MapInk, InkOverlay } from "./drawtools.js?v=__V__";
+import { StopsModal } from "./events.js?v=__V__";
 import { EMOJI } from "./emoji-data.js?v=__V__";
 
 /* The SAME map members see in the app: the hand-drawn artwork from map_config
@@ -103,6 +104,7 @@ function Birds() {
 export function SharedMap({ client, session, flash, readonly = false, compact = false, community = null, communities = [] }) {
   const [city, setCity] = useState(localStorage.getItem("ca.mapcity") || DEFAULT_CITY);
   const [editing, setEditing] = useState(null);   // {x,y,_new} | map_event row | {_kind:'poi', ...poi row}
+  const [stopsFor, setStopsFor] = useState(null); // activity whose hunt stops are being placed (opened from a pin's details)
   const [inkMode, setInkMode] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const wrap = useRef(null);
@@ -183,10 +185,6 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
-
-  // move one stop of a hunt: rewrite that stop's x/y, leave everything else in the itinerary alone
-  const saveStop = (act, i) => (f) => client.from("activities")
-    .update({ itinerary: act.itinerary.map((s, j) => (j === i ? { ...s, x: f.x, y: f.y } : s)) }).eq("id", act.id);
 
   const uploadArt = async (ev) => {
     const file = ev.target.files[0];
@@ -269,23 +267,32 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
               placed.length > 1 && html`<svg key=${"trail" + a.id} class="stops-trail" viewBox="0 0 100 100" preserveAspectRatio="none">
                 <path d=${wobblePath(placed.map((o) => [o.s.x * 100, o.s.y * 100]), a.id)} fill="none" stroke="#1d1a16" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".88" />
               </svg>`,
-              ...placed.map(({ s, i }) => html`<button key=${a.id + ":" + i} type="button" class="stop-dot" title=${`${a.title} — ${label} stop ${i + 1}${s.title ? ": " + s.title : ""}`}
-                aria-label=${`Move stop ${i + 1} of ${a.title}`} style=${`left:${s.x * 100}%;top:${s.y * 100}%`}
-                onPointerDown=${startDrag({ id: a.id + ":" + i }, "activities", saveStop(a, i))}>${i + 1}</button>`),
+              ...placed.map(({ s, i }) => html`<span key=${a.id + ":" + i} class="stop-dot preview" title=${`${a.title} — ${label} stop ${i + 1}${s.title ? ": " + s.title : ""} · click the hunt's pin to move stops`}
+                style=${`left:${s.x * 100}%;top:${s.y * 100}%`}>${i + 1}</span>`),
             ];
           })}
           ${!inkMode && html`<${InkOverlay} elements=${ink} />`}
           ${inkMode && html`<${MapInk} key=${city} client=${client} city=${city} flash=${flash} saved=${ink}
             onExit=${() => setInkMode(false)} onSaved=${(els) => setInk(els)} />`}
         </div>`}
-    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, 💬 yaps, and the numbered hunt stops) · click a pin or dot to edit. POI dots are the small black circles; numbered circles joined by the dotted trail are a hunt's stops.</p>`}
+    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, 💬 yaps) · click a pin or dot to edit. POI dots are the small black circles; numbered circles on the dotted trail are a hunt's stops — click the hunt's pin, then <b>Stops</b>, to move them.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
       community=${community} communities=${communities} city=${city}
+      onStops=${(act) => { setEditing(null); setStopsFor(act); }}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
+    ${stopsFor && html`<${StopsModal} client=${client} event=${stopsFor} community=${community} flash=${flash}
+      onClose=${() => setStopsFor(null)} onSaved=${() => { setStopsFor(null); load(); }} />`}
   </${Page}>`;
 }
 
-function PinModal({ client, session, pin, flash, community, communities, city = DEFAULT_CITY, onClose, onSaved }) {
+function PinModal({ client, session, pin, flash, community, communities, city = DEFAULT_CITY, onClose, onSaved, onStops }) {
+  // a pin bridged from a plan may be a hunt/adventure — then its stops are editable from here
+  const { data: hunt } = useLoader(async () => {
+    if (!pin.activity_id) return { data: [] };
+    const r = await client.from("activities").select("id,title,city,itin_kind,itinerary").eq("id", pin.activity_id).maybeSingle();
+    return r.error ? { error: r.error } : { data: r.data && Array.isArray(r.data.itinerary) && r.data.itinerary.length ? r.data : [] };
+  }, [client, pin.activity_id], { flash: null, where: "Pin" });
+  const huntAct = hunt && !Array.isArray(hunt) ? hunt : null;
   const isNew = !!pin._new;
   const isPoi = pin._kind === "poi";
   const [kind, setKind] = useState(isPoi ? "poi" : "event");
@@ -405,6 +412,7 @@ function PinModal({ client, session, pin, flash, community, communities, city = 
       `}
       <div class="actions" style="justify-content:space-between">
         <div class="u-row" style="gap:8px">
+          ${huntAct && html`<button type="button" class="btn sm" title="Place and move this hunt's stops on the map" onClick=${() => onStops?.(huntAct)}>🗺 Stops · ${huntAct.itinerary.length}</button>`}
           ${!isNew && html`${kind !== "poi" && html`<button type="button" class="btn sm ghost" onClick=${renew}>Renew 7d</button>`}
             <button type="button" class="btn sm danger" onClick=${remove}>Remove</button>`}
         </div>

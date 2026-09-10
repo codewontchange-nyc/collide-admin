@@ -702,6 +702,7 @@ h2 .sub { font: 400 13px var(--body); color: var(--muted); margin-left: 6px; }
   font: 800 13px var(--body); display: grid; place-items: center; cursor: grab; padding: 0; box-shadow: 0 2px 6px rgba(43,39,34,.35); touch-action: none; }
 .stop-dot:active { cursor: grabbing; }
 .smap .stop-dot { z-index: 4; }
+.stop-dot.preview { pointer-events: none; cursor: default; width: 24px; height: 24px; font-size: 11px; }
 .smap.compact .stop-dot { width: 18px; height: 18px; font-size: 9px; pointer-events: none; }
 .smap.compact .stops-trail { opacity: .7; }
 .stops-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow: auto; }
