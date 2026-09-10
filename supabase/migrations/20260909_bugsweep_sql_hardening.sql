@@ -1,3 +1,4 @@
+-- bugsweep sql hardening. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Bug sweep — SQL security/correctness hardening.
 -- 1) Moderation "hide" bypass: event_invite_preview + join_event are SECURITY
 --    DEFINER, so the restrictive mod_hide_activities RLS policy never applies

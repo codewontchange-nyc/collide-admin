@@ -1,3 +1,4 @@
+-- fix city stamp trigger. Applied live 2026-08-30 (recorded post-hoc; see README).
 -- Fix, 2026-08-30: set_req_city() forced city='nyc' on all console inserts.
 --
 -- The BEFORE INSERT triggers (activities, map_events, pois, yaps,

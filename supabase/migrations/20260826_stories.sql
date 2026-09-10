@@ -1,3 +1,4 @@
+-- stories. Applied live 2026-08-26 (recorded post-hoc; see README).
 -- Up Next stories, 2026-08-26
 --
 -- Editorial journal entries staff write to the community at large — text,

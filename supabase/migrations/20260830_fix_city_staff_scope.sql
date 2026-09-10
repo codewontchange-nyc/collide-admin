@@ -1,3 +1,4 @@
+-- fix city staff scope. Applied live 2026-08-30 (recorded post-hoc; see README).
 -- Fix, 2026-08-30: staff city-filter bypass leaked cross-city pins in the APP.
 --
 -- The staff exemption added for the console (which sends no x-collide-city

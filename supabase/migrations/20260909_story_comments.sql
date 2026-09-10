@@ -1,3 +1,4 @@
+-- story comments. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Comments on Up Next journal posts (stories). Supports both end-of-article
 -- comments (quote null) and highlight-to-comment (quote = the selected text,
 -- quote_start/len = char offsets into the plaintext body for re-highlighting).

@@ -1,3 +1,4 @@
+-- lockdown notify push. Applied live 2026-09-08 (recorded post-hoc; see README).
 -- Bug sweep 2026-09-08, CRITICAL: notify_push() was executable by anon
 -- (default PUBLIC grant on functions) — anyone with the public anon key
 -- could send arbitrary push notifications (title/body/link fully attacker-

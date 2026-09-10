@@ -1,3 +1,4 @@
+-- community lifecycle. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- Community lifecycle: city assignment + archive, 2026-08-25
 --
 -- city: which city a community belongs to (app filters per-city).

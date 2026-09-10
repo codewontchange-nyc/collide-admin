@@ -1,3 +1,4 @@
+-- platform kpis. Applied live 2026-08-26 (recorded post-hoc; see README).
 -- Platform KPIs for the Overview page, 2026-08-26
 -- One owner-gated RPC computes everything server-side (auth.users sign-ins,
 -- funnel stages, week-over-week windows) so the console renders a strip of

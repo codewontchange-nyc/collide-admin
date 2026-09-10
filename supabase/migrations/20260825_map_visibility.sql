@@ -1,3 +1,4 @@
+-- map visibility. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- Map marker visibility, 2026-08-25
 --
 -- The rule: Collide itself can own markers (community_id IS NULL) and those

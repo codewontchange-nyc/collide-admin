@@ -1,3 +1,4 @@
+-- crm. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- CRM + drip funnel, 2026-08-25
 -- (__PUSH_SECRET__ substituted at apply time)
 --

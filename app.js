@@ -1,19 +1,19 @@
 import { render } from "https://esm.sh/preact@10.23.2";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2?bundle";
-import { html, Avatar } from "./ui.js?v=45";
-import { Dashboard } from "./dashboard.js?v=45";
-import { SharedMap } from "./sharedmap.js?v=45";
-import { Overview } from "./overview.js?v=45";
-import { DataPage } from "./datatable.js?v=45";
-import { CRMPage } from "./crm.js?v=45";
-import { IssuesPage } from "./issues.js?v=45";
-import { UpNextPage } from "./upnext.js?v=45";
-import { AdsPage } from "./ads.js?v=45";
-import { ModerationPage } from "./moderation.js?v=45";
-import { CanvasPage } from "./canvasflow.js?v=45";
-import { NetworkPage } from "./network.js?v=45";
-import { BillingPage } from "./billing.js?v=46";
+import { html, Avatar } from "./ui.js?v=__V__";
+import { Dashboard } from "./dashboard.js?v=__V__";
+import { SharedMap } from "./sharedmap.js?v=__V__";
+import { Overview } from "./overview.js?v=__V__";
+import { DataPage } from "./datatable.js?v=__V__";
+import { CRMPage } from "./crm.js?v=__V__";
+import { IssuesPage } from "./issues.js?v=__V__";
+import { UpNextPage } from "./upnext.js?v=__V__";
+import { AdsPage } from "./ads.js?v=__V__";
+import { ModerationPage } from "./moderation.js?v=__V__";
+import { CanvasPage } from "./canvasflow.js?v=__V__";
+import { NetworkPage } from "./network.js?v=__V__";
+import { BillingPage } from "./billing.js?v=__V__";
 
 /* Collide Admin — desktop console for owners & facilitators.
    Same Supabase project as the mobile app: everything managed here shows up
@@ -30,7 +30,7 @@ window.CA = { client };   // debug/test hook
    feeds and the Issues page reads, tagged source:"console" so the two are
    told apart. Only reports while signed in (RLS needs an authed session);
    throttled + de-duped so one broken render can't flood the table. */
-const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]')?.src.match(/v=(\d+)/)?.[1] || "?");
+const CONSOLE_VER = "console-" + (document.querySelector('script[src*="app.js"]')?.src.match(/v=([\w-]+)/)?.[1] || "?");
 (() => {
   if (!client) return;
   const seen = new Map(); let sent = 0; const CAP = 20;

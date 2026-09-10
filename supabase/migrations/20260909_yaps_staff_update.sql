@@ -1,3 +1,4 @@
+-- yaps staff update. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Let staff (admins/facilitators via is_any_staff) reposition Yaps on the admin
 -- map. Yaps had no UPDATE policy at all, so nobody could move them. Scoped to
 -- staff; regular users still only create/delete their own.

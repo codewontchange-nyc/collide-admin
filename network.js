@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from "https://esm.sh/d3-force@3.0.0";
-import { html, fetchAll, cityName } from "./ui.js?v=45";
+import { html, fetchAll, cityName } from "./ui.js?v=__V__";
 
 /* Network — the platform as a living social graph. Communities are squares,
    people are their profile pictures, and three kinds of ties run between them:

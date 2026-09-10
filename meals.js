@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, moneyExact } from "./ui.js?v=45";
+import { html, Avatar, moneyExact } from "./ui.js?v=__V__";
 
 /* Meals ("Homeplate") — this community's cooks, the meals they've posted, and
    the claims against them. Staff can close an open meal; everything else is

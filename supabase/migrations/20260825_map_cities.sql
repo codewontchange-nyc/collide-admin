@@ -1,3 +1,4 @@
+-- map cities. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- Per-city maps in the console, 2026-08-25
 --
 -- map_config grows a city column (one artwork row per city; id=1 stays the

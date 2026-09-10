@@ -1,1 +1,0 @@
-window.CA_CONFIG = { SUPABASE_URL: "https://pjxvvwcnjjizdtiutpxd.supabase.co", SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqeHZ2d2NuamppemR0aXV0cHhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NzI4MTgsImV4cCI6MjEwMjE0ODgxOH0.IIefwyxWZlzX1JgXvsz1GEOPDjZtkWELxJniqqi2RNI" };

@@ -1,3 +1,4 @@
+-- bans. Applied live 2026-08-31 (recorded post-hoc; see README).
 -- User bans, 2026-08-31
 -- The ban record is email-keyed so it outlives account deletion and blocks
 -- re-invites. The actual lockout is GoTrue's native banned_until (set by the

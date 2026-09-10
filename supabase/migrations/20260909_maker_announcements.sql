@@ -1,3 +1,4 @@
+-- maker announcements. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Expand the maker role: active makers may post a city-wide Up Next announcement.
 -- Previously only staff could post to the city feed (community_id IS NULL);
 -- members could only post into their own community/circle. Makers are vetted

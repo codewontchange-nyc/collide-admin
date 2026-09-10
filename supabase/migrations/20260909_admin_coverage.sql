@@ -1,3 +1,4 @@
+-- admin coverage. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Close the app-vs-admin gaps.
 -- 1) Moderation reach: DMs, journal comments, hunt reviews, meals become hideable/deletable.
 -- 2) Staff can read the member-content tables the admin panel now surfaces.

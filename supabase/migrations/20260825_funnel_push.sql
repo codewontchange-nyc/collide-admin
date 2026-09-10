@@ -1,3 +1,4 @@
+-- funnel push. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- Invite funnel + web push, 2026-08-25
 -- (applied live; __PUSH_SECRET__ is substituted at apply time — the real
 --  value lives in the edge function secrets and inside the DB trigger only)

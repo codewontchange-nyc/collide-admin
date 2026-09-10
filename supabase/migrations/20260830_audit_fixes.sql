@@ -1,3 +1,4 @@
+-- audit fixes. Applied live 2026-08-30 (recorded post-hoc; see README).
 -- Audit fixes, 2026-08-30
 
 -- 1 · CRITICAL: any authenticated user could overwrite any city's map

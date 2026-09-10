@@ -1,3 +1,4 @@
+-- activities recap. Applied live 2026-09-09 (recorded post-hoc; see README).
 -- Cached, once-generated recap of a wrapped plan (chat + details distilled to a
 -- short nuanced line). Null = nothing worth saying yet / not enough material.
 alter table public.activities add column if not exists recap text;

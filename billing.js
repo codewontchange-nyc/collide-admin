@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Avatar, money } from "./ui.js?v=45";
+import { html, Avatar, money } from "./ui.js?v=__V__";
 
 /* Billing — Collide's own Stripe account. Two platform plans: Maker $5/mo
    (per profile) and Facilitator $25/mo (per community, billed to its owner).

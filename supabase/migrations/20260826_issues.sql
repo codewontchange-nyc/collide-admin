@@ -1,3 +1,4 @@
+-- issues. Applied live 2026-08-26 (recorded post-hoc; see README).
 -- Issues page support, 2026-08-26
 -- client_errors already exists (app telemetry writes, staff read).
 -- Owners can clear handled errors from the console.

@@ -1,3 +1,4 @@
+-- crm stage0. Applied live 2026-08-25 (recorded post-hoc; see README).
 -- CRM stage 0: the acquisition lane, 2026-08-25
 --
 -- Invited people get an account (and membership) at invite time, but until
