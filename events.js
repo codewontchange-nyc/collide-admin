@@ -203,7 +203,7 @@ export function StopsModal({ client, event, community, flash, onClose, onSaved }
   const trail = wobblePath(placed.map((o) => [o.s.x * 100, o.s.y * 100]), event.id);
   const label = event.itin_kind === "hunt" ? "hunt" : event.itin_kind === "adventure" ? "adventure" : "itinerary";
 
-  return html`<${Modal} title=${`Stops on the map — ${event.title}`} width=${920} onClose=${() => { if (!dirty || confirmDanger("Leave without saving your moves?")) onClose(); }}>
+  return html`<${Modal} title=${`Stops on the map — ${event.title}`} width=${1380} onClose=${() => { if (!dirty || confirmDanger("Leave without saving your moves?")) onClose(); }}>
     <p class="tiny muted" style="margin:-8px 0 12px">${cityName(city)} · this ${label} has ${stops.length} stop${stops.length === 1 ? "" : "s"}, ${placed.length} on the map. Drag a number to move it; pick “Place” on an unplaced stop, then click the map.</p>
     <div class="stops-grid">
       <div class=${"stops-map" + (placing != null ? " placing" : "")} ref=${box} onClick=${onMapClick}>

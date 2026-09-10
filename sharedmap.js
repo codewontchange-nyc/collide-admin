@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, wobblePath, confirmDanger } from "./ui.js?v=__V__";
+import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, confirmDanger } from "./ui.js?v=__V__";
 import { useLoader, paged, storageUrl, BUCKETS, firstError, showError } from "./db.js?v=__V__";
 import { MapInk, InkOverlay } from "./drawtools.js?v=__V__";
 import { StopsModal } from "./events.js?v=__V__";
@@ -115,17 +115,15 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   // one load per city; realtime (filtered to this city) re-runs it so app edits appear here live, and vice versa
   const byCity = (t) => ({ table: t, filter: `city=eq.${city}` });
   const { data, error, reload, setData } = useLoader(async () => {
-    const [c, e, k, p, d, y, h] = await Promise.all([
+    const [c, e, k, p, d, y] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
       paged((a, b) => client.from("map_events").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
       paged((a, b) => client.from("pois").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
       paged((a, b) => client.from("yaps").select("*").eq("city", city).order("created_at").range(a, b)),
-      // hunts / adventures: their stops live on this map too (activities.itinerary[i].x/y)
-      client.from("activities").select("id,title,itin_kind,itinerary,expires_at,date").eq("city", city).not("itinerary", "is", null),
     ]);
-    const err = firstError([c, e, k, p, d, y, h]); if (err) return { error: err };
+    const err = firstError([c, e, k, p, d, y]); if (err) return { error: err };
     return { data: {
       cfg: c.data || null,
       ink: d.data?.elements || [],
@@ -133,13 +131,12 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       comms: (k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at),
       pois: (p.data || []).filter((r) => r.x != null && r.y != null),
       yaps: (y.data || []).filter(alive).filter((r) => r.x != null && r.y != null),
-      hunts: (h.data || []).filter((a) => Array.isArray(a.itinerary) && a.itinerary.some((s) => s.x != null && s.y != null)),
     } };
-  }, [client, city], { flash, where: "Map", client, realtime: ["map_events", "map_config", "communities", "pois", "yaps", "map_drawings", "activities"].map(byCity) });
+  }, [client, city], { flash, where: "Map", client, realtime: ["map_events", "map_config", "communities", "pois", "yaps", "map_drawings"].map(byCity) });
   const load = reload;
   const ready = data && !Array.isArray(data) ? data : null;
   const cfg = ready === null ? undefined : (imgFailed ? null : ready.cfg);
-  const { events = [], pois = [], yaps = [], ink = [], hunts = [] } = ready || {};
+  const { events = [], pois = [], yaps = [], ink = [] } = ready || {};
   const setInk = (els) => setData((d) => (d && !Array.isArray(d) ? { ...d, ink: els } : d));
 
   const frac = (ev) => {
@@ -260,22 +257,11 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
               style=${`left:${y.x * 100}%;top:${y.y * 100}%`} onPointerDown=${startDrag(y, "yaps")}>
             <span class="pe">💬</span>
           </button>`)}
-          ${hunts.flatMap((a) => {
-            const placed = a.itinerary.map((s, i) => ({ s, i })).filter((o) => o.s.x != null && o.s.y != null);
-            const label = a.itin_kind === "hunt" ? "hunt" : a.itin_kind === "adventure" ? "adventure" : "itinerary";
-            return [
-              placed.length > 1 && html`<svg key=${"trail" + a.id} class="stops-trail" viewBox="0 0 100 100" preserveAspectRatio="none">
-                <path d=${wobblePath(placed.map((o) => [o.s.x * 100, o.s.y * 100]), a.id)} fill="none" stroke="#1d1a16" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".88" />
-              </svg>`,
-              ...placed.map(({ s, i }) => html`<span key=${a.id + ":" + i} class="stop-dot preview" title=${`${a.title} — ${label} stop ${i + 1}${s.title ? ": " + s.title : ""} · click the hunt's pin to move stops`}
-                style=${`left:${s.x * 100}%;top:${s.y * 100}%`}>${i + 1}</span>`),
-            ];
-          })}
           ${!inkMode && html`<${InkOverlay} elements=${ink} />`}
           ${inkMode && html`<${MapInk} key=${city} client=${client} city=${city} flash=${flash} saved=${ink}
             onExit=${() => setInkMode(false)} onSaved=${(els) => setInk(els)} />`}
         </div>`}
-    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, 💬 yaps) · click a pin or dot to edit. POI dots are the small black circles; numbered circles on the dotted trail are a hunt's stops — click the hunt's pin, then <b>Stops</b>, to move them.</p>`}
+    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, 💬 yaps) · click a pin or dot to edit. POI dots are the small black circles. A hunt's stops are placed from its pin → <b>Stops</b>.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
       community=${community} communities=${communities} city=${city}
       onStops=${(act) => { setEditing(null); setStopsFor(act); }}
