@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from "https://esm.sh/preact@10.23.2/hooks";
-import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, confirmDanger } from "./ui.js?v=__V__";
+import { html, Modal, Page, Loading, Empty, LoadError, uploadMedia, mediaUrl, CITIES, cityName, DEFAULT_CITY, wobblePath, confirmDanger } from "./ui.js?v=__V__";
 import { useLoader, paged, storageUrl, BUCKETS, firstError, showError } from "./db.js?v=__V__";
 import { MapInk, InkOverlay } from "./drawtools.js?v=__V__";
 import { EMOJI } from "./emoji-data.js?v=__V__";
@@ -113,15 +113,17 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   // one load per city; realtime (filtered to this city) re-runs it so app edits appear here live, and vice versa
   const byCity = (t) => ({ table: t, filter: `city=eq.${city}` });
   const { data, error, reload, setData } = useLoader(async () => {
-    const [c, e, k, p, d, y] = await Promise.all([
+    const [c, e, k, p, d, y, h] = await Promise.all([
       client.from("map_config").select("*").eq("city", city).maybeSingle(),
       paged((a, b) => client.from("map_events").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("communities").select("id,name,emoji,x,y,archived_at").eq("city", city),
       paged((a, b) => client.from("pois").select("*").eq("city", city).order("created_at").range(a, b)),
       client.from("map_drawings").select("elements").eq("city", city).maybeSingle(),
       paged((a, b) => client.from("yaps").select("*").eq("city", city).order("created_at").range(a, b)),
+      // hunts / adventures: their stops live on this map too (activities.itinerary[i].x/y)
+      client.from("activities").select("id,title,itin_kind,itinerary,expires_at,date").eq("city", city).not("itinerary", "is", null),
     ]);
-    const err = firstError([c, e, k, p, d, y]); if (err) return { error: err };
+    const err = firstError([c, e, k, p, d, y, h]); if (err) return { error: err };
     return { data: {
       cfg: c.data || null,
       ink: d.data?.elements || [],
@@ -129,12 +131,13 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       comms: (k.data || []).filter((r) => r.x != null && r.y != null && !r.archived_at),
       pois: (p.data || []).filter((r) => r.x != null && r.y != null),
       yaps: (y.data || []).filter(alive).filter((r) => r.x != null && r.y != null),
+      hunts: (h.data || []).filter((a) => Array.isArray(a.itinerary) && a.itinerary.some((s) => s.x != null && s.y != null)),
     } };
-  }, [client, city], { flash, where: "Map", client, realtime: ["map_events", "map_config", "communities", "pois", "yaps", "map_drawings"].map(byCity) });
+  }, [client, city], { flash, where: "Map", client, realtime: ["map_events", "map_config", "communities", "pois", "yaps", "map_drawings", "activities"].map(byCity) });
   const load = reload;
   const ready = data && !Array.isArray(data) ? data : null;
   const cfg = ready === null ? undefined : (imgFailed ? null : ready.cfg);
-  const { events = [], pois = [], yaps = [], ink = [] } = ready || {};
+  const { events = [], pois = [], yaps = [], ink = [], hunts = [] } = ready || {};
   const setInk = (els) => setData((d) => (d && !Array.isArray(d) ? { ...d, ink: els } : d));
 
   const frac = (ev) => {
@@ -145,16 +148,17 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
   const onMapClick = (ev) => {
     if (inkMode) return;   // drawing layer owns the pointer
     if (readonly || drag.current?.moved) { drag.current = null; return; }
-    if (ev.target.closest(".map-pin") || ev.target.closest(".map-poi")) return;
+    if (ev.target.closest(".map-pin") || ev.target.closest(".map-poi") || ev.target.closest(".stop-dot")) return;
     setEditing({ ...frac(ev), _new: true });
   };
 
   /* drag pins (events + communities + POIs + yaps) — save x/y on release;
      a plain click (no movement) opens the editor for events & POIs (yaps move only) */
-  const startDrag = (row, table) => (ev) => {
+  // `save(f)` overrides the generic x/y update — hunt stops live inside activities.itinerary
+  const startDrag = (row, table, save) => (ev) => {
     if (readonly) return;
     ev.stopPropagation(); ev.preventDefault();
-    drag.current = { row, table, moved: false };
+    drag.current = { row, table, save, moved: false };
     const el = ev.currentTarget;
     const move = (e) => {
       const f = frac(e);
@@ -167,7 +171,7 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
       window.removeEventListener("pointerup", up);
       const d = drag.current;
       if (d?.moved && d.f) {
-        const { error } = await client.from(d.table).update({ x: d.f.x, y: d.f.y }).eq("id", d.row.id);
+        const { error } = d.save ? await d.save(d.f) : await client.from(d.table).update({ x: d.f.x, y: d.f.y }).eq("id", d.row.id);
         if (error) showError(flash, "Move", error); else flash("Moved 📍");
         load();
       } else if (d && !d.moved) {
@@ -179,6 +183,10 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
+  // move one stop of a hunt: rewrite that stop's x/y, leave everything else in the itinerary alone
+  const saveStop = (act, i) => (f) => client.from("activities")
+    .update({ itinerary: act.itinerary.map((s, j) => (j === i ? { ...s, x: f.x, y: f.y } : s)) }).eq("id", act.id);
 
   const uploadArt = async (ev) => {
     const file = ev.target.files[0];
@@ -254,11 +262,23 @@ export function SharedMap({ client, session, flash, readonly = false, compact = 
               style=${`left:${y.x * 100}%;top:${y.y * 100}%`} onPointerDown=${startDrag(y, "yaps")}>
             <span class="pe">💬</span>
           </button>`)}
+          ${hunts.flatMap((a) => {
+            const placed = a.itinerary.map((s, i) => ({ s, i })).filter((o) => o.s.x != null && o.s.y != null);
+            const label = a.itin_kind === "hunt" ? "hunt" : a.itin_kind === "adventure" ? "adventure" : "itinerary";
+            return [
+              placed.length > 1 && html`<svg key=${"trail" + a.id} class="stops-trail" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <path d=${wobblePath(placed.map((o) => [o.s.x * 100, o.s.y * 100]), a.id)} fill="none" stroke="#1d1a16" stroke-width="2.4" vector-effect="non-scaling-stroke" stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".88" />
+              </svg>`,
+              ...placed.map(({ s, i }) => html`<button key=${a.id + ":" + i} type="button" class="stop-dot" title=${`${a.title} — ${label} stop ${i + 1}${s.title ? ": " + s.title : ""}`}
+                aria-label=${`Move stop ${i + 1} of ${a.title}`} style=${`left:${s.x * 100}%;top:${s.y * 100}%`}
+                onPointerDown=${startDrag({ id: a.id + ":" + i }, "activities", saveStop(a, i))}>${i + 1}</button>`),
+            ];
+          })}
           ${!inkMode && html`<${InkOverlay} elements=${ink} />`}
           ${inkMode && html`<${MapInk} key=${city} client=${client} city=${city} flash=${flash} saved=${ink}
             onExit=${() => setInkMode(false)} onSaved=${(els) => setInk(els)} />`}
         </div>`}
-    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, and 💬 yaps) · click a pin or dot to edit. POI dots are the small black circles.</p>`}
+    ${!compact && html`<p class="tiny muted" style="margin-top:10px">Click anywhere to drop an event pin or POI · drag anything to move it (events, POIs, community pins, 💬 yaps, and the numbered hunt stops) · click a pin or dot to edit. POI dots are the small black circles; numbered circles joined by the dotted trail are a hunt's stops.</p>`}
     ${editing && html`<${PinModal} client=${client} session=${session} pin=${editing} flash=${flash}
       community=${community} communities=${communities} city=${city}
       onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); load(); }} />`}
