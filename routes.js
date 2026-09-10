@@ -17,7 +17,7 @@ export const PAGES = [
            ["invites", "Invites"], ["bans", "Bans"]] },
   { key: "crm",       label: "CRM", ownerOnly: true,
     tabs: [["funnel", "Funnel"], ["campaigns", "Campaigns"], ["activity", "Activity"]] },
-  { key: "scout",     label: "Scout", tabs: [["", "Find"], ["paste", "Paste a link"], ["sources", "Sources"]] },
+  { key: "scout",     label: "Scout", tabs: [["", "Find"], ["paste", "Paste a link"], ["sources", "Sources"], ["creators", "Creators"]] },
   { key: "billing",   label: "Billing", ownerOnly: true },
   { key: "mod",       label: "Moderation", ownerOnly: true },
   { key: "ads",       label: "Ads" },

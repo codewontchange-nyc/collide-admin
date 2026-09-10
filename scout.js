@@ -23,7 +23,7 @@ export function ScoutPage({ client, communities, isOwner, session, flash, sub, g
     actions=${html`<select class="commselect" value=${city} onChange=${(e) => pickCity(e.target.value)} title="Which city's feed">
       ${CITIES.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>`}>
     <${Tabs} page="scout" current=${tab} go=${go} />
-    ${tab === "paste" ? html`<${PasteTab} ...${ctx} />` : tab === "sources" ? html`<${SourcesTab} ...${ctx} />` : html`<${FindTab} ...${ctx} />`}
+    ${tab === "paste" ? html`<${PasteTab} ...${ctx} />` : tab === "sources" ? html`<${SourcesTab} ...${ctx} />` : tab === "creators" ? html`<${CreatorsTab} ...${ctx} />` : html`<${FindTab} ...${ctx} />`}
   </${Page}>`;
 }
 
@@ -416,6 +416,128 @@ function SourceModal({ client, city, communities, session, flash, initial, onClo
     <div class="actions">
       <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
       <button type="button" class="btn" disabled=${!ok || busy} title=${!KIND_LABEL[f.kind] ? "Check the link first" : ""} onClick=${save}>${editing ? "Save" : "Watch it"}</button>
+    </div>
+  </${Modal}>`;
+}
+
+/* ---------- creators: the outreach directory ----------
+   People and pages who already gather a crowd in a city — hosts, promoters,
+   newsletter writers. A lightweight pipeline (prospect → contacted → replied →
+   onboarded / declined) with whoever on staff is working the lead. */
+const CREATOR_STATUS = [["prospect", "prospect", "neutral"], ["contacted", "contacted", "warn"], ["replied", "replied", "warn"], ["onboarded", "onboarded", "ok"], ["declined", "declined", "bad"]];
+const PLATFORMS = [["instagram", "Instagram"], ["tiktok", "TikTok"], ["luma", "Luma"], ["eventbrite", "Eventbrite"], ["partiful", "Partiful"], ["meetup", "Meetup"], ["substack", "Substack"], ["website", "Website"], ["other", "Other"]];
+const handleUrl = (r) => r.profile_url || (r.handle && ({ instagram: `https://instagram.com/${r.handle.replace(/^@/, "")}`, tiktok: `https://tiktok.com/@${r.handle.replace(/^@/, "")}`, substack: `https://${r.handle.replace(/^@/, "")}.substack.com`, luma: `https://lu.ma/${r.handle.replace(/^@/, "")}` })[r.platform]) || null;
+const fmtFollowers = (n) => n == null ? "" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "k" : String(n);
+
+function CreatorsTab({ client, city, communities, session, isOwner, flash }) {
+  const [modal, setModal] = useState(null);   // "new" | creator row
+  const [status, setStatus] = useState("all");
+  const [platform, setPlatform] = useState("");
+  const [q, setQ] = useState("");
+  const { data: rows, error, reload, setData } = useLoader(() => client.from("creators").select("*").eq("city", city).order("updated_at", { ascending: false }),
+    [client, city], { flash, where: "Creators", client, realtime: [{ table: "creators", filter: `city=eq.${city}` }] });
+  const { data: sources } = useLoader(() => client.from("scout_sources").select("id,label").eq("city", city), [client, city], { flash: null, where: "Creators" });
+
+  const shown = useMemo(() => (rows || []).filter((r) => (status === "all" || r.status === status) && (!platform || r.platform === platform)
+    && (!q.trim() || [r.name, r.handle, r.notes, r.email, (r.tags || []).join(" ")].some((s) => (s || "").toLowerCase().includes(q.trim().toLowerCase())))), [rows, status, platform, q]);
+  const save = async (r, patch, msg) => {
+    const { error: e } = await client.from("creators").update(patch).eq("id", r.id);
+    if (e) { showError(flash, "Creator", e); return; }
+    setData((rs) => rs.map((x) => (x.id === r.id ? { ...x, ...patch } : x))); if (msg) flash(msg);
+  };
+  const contacted = (r) => save(r, { status: r.status === "prospect" ? "contacted" : r.status, last_contact_at: new Date().toISOString(), owner_email: r.owner_email || session?.user?.email || null }, "Logged the touch");
+  const remove = async (r) => {
+    if (!confirmDanger(`Remove ${r.name} from the directory?`)) return;
+    const { error: e, count } = await client.from("creators").delete({ count: "exact" }).eq("id", r.id);
+    if (e || !count) { showError(flash, "Delete", e || "Only owners can remove a creator"); return; }
+    setData((rs) => rs.filter((x) => x.id !== r.id)); flash("Removed");
+  };
+  const loading = rows === null;
+  const n = (k) => (rows || []).filter((r) => r.status === k).length;
+
+  return html`<div>
+    <${Metrics} size="sm" loading=${loading} items=${CREATOR_STATUS.map(([k, l]) => [l, n(k)])} />
+    <div class="u-row u-wrap" style="margin-bottom:12px">
+      <input class="dt-search" placeholder="Search names, handles, tags…" value=${q} onInput=${(e) => setQ(e.target.value)} />
+      <div class="chips">${[["all", "all"], ...CREATOR_STATUS].map(([k, l]) => html`<button class="chip" aria-pressed=${status === k ? "true" : "false"} onClick=${() => setStatus(k)}>${l}</button>`)}</div>
+      <select class="commselect" value=${platform} onChange=${(e) => setPlatform(e.target.value)}><option value="">any platform</option>${PLATFORMS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
+      <div class="u-grow"></div>
+      <button class="btn sm" onClick=${() => setModal("new")}>+ Add a creator</button>
+    </div>
+    ${error ? html`<${LoadError} what="creators" error=${error} onRetry=${reload} />`
+      : loading ? html`<${Loading} label="Loading the directory…" />`
+      : shown.length === 0 ? html`<${Empty}>${(rows || []).length ? "Nobody matches." : `No creators in ${cityName(city)} yet — add the hosts and pages whose crowds you'd want here.`}</${Empty}>`
+      : html`<table class="table"><thead><tr><th>Creator</th><th>Platform</th><th>Reach</th><th>Contact</th><th>Working it</th><th>Last touch</th><th>Status</th><th></th></tr></thead><tbody>
+        ${shown.map((r) => html`<tr key=${r.id}>
+          <td><b>${r.name}</b>${r.handle && html` <a class="tiny muted" href=${handleUrl(r) || "#"} target="_blank" rel="noopener">${r.handle.startsWith("@") ? r.handle : "@" + r.handle}</a>`}
+            ${(r.tags || []).length > 0 && html`<div class="tiny muted">${r.tags.join(" · ")}</div>`}
+            ${r.notes && html`<div class="tiny muted u-ellipsis" style="max-width:320px" title=${r.notes}>${r.notes}</div>`}
+            ${r.status === "onboarded" && r.community_id && html`<div class="tiny tone-ok">→ ${communities.find((c) => c.id === r.community_id)?.name || "community"}</div>`}</td>
+          <td><${Pill} tone="neutral" sm>${(PLATFORMS.find(([k]) => k === r.platform) || [0, r.platform])[1]}</${Pill}></td>
+          <td class="tiny">${fmtFollowers(r.followers)}</td>
+          <td class="tiny">${[r.email, r.phone].filter(Boolean).map((c) => html`<div>${c}</div>`)}</td>
+          <td class="tiny">${r.owner_email ? r.owner_email.split("@")[0] : "—"}</td>
+          <td class="tiny">${r.last_contact_at ? ago(r.last_contact_at) : "never"}</td>
+          <td><select class="commselect" value=${r.status} onChange=${(e) => save(r, { status: e.target.value }, "Status updated")}>${CREATOR_STATUS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select></td>
+          <td><div class="u-row" style="justify-content:flex-end">
+            <button class="btn sm ghost" onClick=${() => contacted(r)} title="Log that you reached out today">Touched</button>
+            <button class="btn sm ghost" onClick=${() => setModal(r)}>Edit</button>
+            ${isOwner && html`<button class="btn sm danger" onClick=${() => remove(r)}>Remove</button>`}
+          </div></td>
+        </tr>`)}
+      </tbody></table>`}
+    ${modal && html`<${CreatorModal} client=${client} city=${city} communities=${communities} sources=${sources || []} session=${session} flash=${flash} initial=${modal === "new" ? null : modal}
+      onClose=${() => setModal(null)} onSaved=${() => { setModal(null); reload(); }} />`}
+  </div>`;
+}
+
+function CreatorModal({ client, city, communities, sources, session, flash, initial, onClose, onSaved }) {
+  const editing = !!(initial && initial.id);
+  const [f, setF] = useState({ name: initial?.name || "", handle: initial?.handle || "", platform: initial?.platform || "instagram", profile_url: initial?.profile_url || "", followers: initial?.followers ?? "",
+    email: initial?.email || "", phone: initial?.phone || "", tags: (initial?.tags || []).join(", "), notes: initial?.notes || "", status: initial?.status || "prospect",
+    owner_email: initial?.owner_email || session?.user?.email || "", community_id: initial?.community_id || "", source_id: initial?.source_id || "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async () => {
+    setBusy(true);
+    const row = { city, name: f.name.trim(), handle: f.handle.trim().replace(/^@/, "") || null, platform: f.platform, profile_url: f.profile_url.trim() || null,
+      followers: f.followers === "" ? null : Math.max(0, parseInt(f.followers, 10) || 0), email: f.email.trim() || null, phone: f.phone.trim() || null,
+      tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), notes: f.notes.trim() || null, status: f.status, owner_email: f.owner_email.trim() || null,
+      community_id: f.community_id || null, source_id: f.source_id || null };
+    const { error } = editing ? await client.from("creators").update(row).eq("id", initial.id) : await client.from("creators").insert({ ...row, created_by: session?.user?.id || null });
+    setBusy(false);
+    if (error) { showError(flash, "Creator", /duplicate|unique/i.test(error.message) ? "That handle is already in the directory" : error); return; }
+    flash(editing ? "Saved ✓" : "Added to the directory"); onSaved();
+  };
+  return html`<${Modal} title=${editing ? `Edit ${initial.name}` : "Add a creator"} width=${600} onClose=${onClose}>
+    <div class="fieldrow">
+      <div class="field u-grow"><label>Name</label><input value=${f.name} onInput=${set("name")} placeholder="Who they are" /></div>
+      <div class="field"><label>Platform</label><select value=${f.platform} onChange=${set("platform")}>${PLATFORMS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select></div>
+    </div>
+    <div class="fieldrow">
+      <div class="field"><label>Handle</label><input value=${f.handle} onInput=${set("handle")} placeholder="@handle" /></div>
+      <div class="field u-grow"><label>Profile link</label><input value=${f.profile_url} onInput=${set("profile_url")} placeholder="https://…" /></div>
+      <div class="field" style="width:110px"><label>Followers</label><input type="number" min="0" value=${f.followers} onInput=${set("followers")} /></div>
+    </div>
+    <div class="fieldrow">
+      <div class="field u-grow"><label>Email</label><input type="email" value=${f.email} onInput=${set("email")} /></div>
+      <div class="field"><label>Phone</label><input value=${f.phone} onInput=${set("phone")} /></div>
+    </div>
+    <div class="field"><label>Tags <span class="muted">(comma-separated — run club, supper club, DJ…)</span></label><input value=${f.tags} onInput=${set("tags")} /></div>
+    <div class="fieldrow">
+      <div class="field"><label>Status</label><select value=${f.status} onChange=${set("status")}>${CREATOR_STATUS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select></div>
+      <div class="field u-grow"><label>Working it <span class="muted">(staff email)</span></label><input value=${f.owner_email} onInput=${set("owner_email")} /></div>
+    </div>
+    <div class="fieldrow">
+      <div class="field u-grow"><label>Their community <span class="muted">(once onboarded)</span></label>
+        <select value=${f.community_id} onChange=${set("community_id")}><option value="">—</option>${communities.filter((c) => !c.archived_at && (c.city === city || c.city === "global")).map((c) => html`<option value=${c.id}>${c.emoji || ""} ${c.name}</option>`)}</select></div>
+      <div class="field u-grow"><label>Watched source <span class="muted">(if we read their calendar)</span></label>
+        <select value=${f.source_id} onChange=${set("source_id")}><option value="">—</option>${sources.map((s) => html`<option value=${s.id}>${s.label}</option>`)}</select></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea rows="3" value=${f.notes} onInput=${set("notes")} placeholder="what they run, what we'd offer, how it went"></textarea></div>
+    <div class="actions">
+      <button type="button" class="btn ghost" onClick=${onClose}>Cancel</button>
+      <button type="button" class="btn" disabled=${busy || !f.name.trim()} onClick=${save}>${editing ? "Save" : "Add"}</button>
     </div>
   </${Modal}>`;
 }
