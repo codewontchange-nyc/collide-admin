@@ -114,6 +114,24 @@ export const eventMirror = ({ date, starts_at, location }) => ({
   expires_at: date ? dateExpiry(date) : null,
 });
 
+/* ---------- hunt trail ----------
+   The dotted path between itinerary stops, as the app draws it: each leg bows
+   a little, which way decided by a hash of the plan id + leg so it's stable.
+   Points are [x, y] in a 0–100 box. Mirror of edAdvWobble in the app bundle. */
+export function wobblePath(P, seed) {
+  if (P.length < 2) return "";
+  const h = (i) => { const x = Math.sin(i * 12.9898 + (seed || "").length * 78.233 + i * i * 0.37) * 43758.5453; return x - Math.floor(x); };
+  const f = (v) => v.toFixed(2);
+  let d = `M${f(P[0][0])} ${f(P[0][1])}`;
+  for (let i = 1; i < P.length; i++) {
+    const a = P[i - 1], b = P[i], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    const amp = Math.min(8, L * 0.24) * (h(i) > 0.5 ? 1 : -1), k = 0.55 + h(i + 7) * 0.6, s2 = h(i + 3) > 0.62 ? -0.8 : 0.7;
+    const c1 = [a[0] + dx / 3 + nx * amp * k, a[1] + dy / 3 + ny * amp * k], c2 = [a[0] + 2 * dx / 3 + nx * amp * s2, a[1] + 2 * dy / 3 + ny * amp * s2];
+    d += ` C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(b[0])} ${f(b[1])}`;
+  }
+  return d;
+}
+
 /* ---------- numbers ---------- */
 export const money = (cents) => "$" + (Math.round((cents || 0) / 100)).toLocaleString("en-US");
 export const moneyExact = (cents) => "$" + ((cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: (cents || 0) % 100 ? 2 : 0 });
