@@ -4,6 +4,7 @@ import { html, Avatar, Pill, Page, Tabs, Metrics, Loading, Empty, LoadError, mon
 import { useLoader, paged, sendModerate, sendInvite, COLS, showError } from "./db.js?v=__V__";
 import { CommunityModal, InviteModal, BanModal } from "./modals.js?v=__V__";
 import { PAGE } from "./routes.js?v=__V__";
+import { PersonPage, personHref } from "./person.js?v=__V__";
 
 /* Data — the owner's god view. Every announcement, event and member across
    ALL communities in one giant grid: metric chips up top, then an
@@ -38,8 +39,9 @@ const commOpts = (ctx, noneLabel) => [
 const profOpts = (ctx) => ctx.profiles.map((p) => ({ v: p.id, l: p.display_name || p.id.slice(0, 6) }));
 const commName = (ctx, id, noneLabel) => (id ? (ctx.communities.find((c) => c.id === id)?.name || "?") : noneLabel);
 const profName = (ctx, id) => (id ? (ctx.profiles.find((p) => p.id === id)?.display_name || id.slice(0, 6)) : "—");
+const personLink = (id, inner) => (id ? html`<a class="who person-link" href=${personHref(id)} title="Open their profile" onClick=${(e) => e.stopPropagation()}>${inner}</a>` : html`<span class="who">${inner}</span>`);
 const profCell = (ctx, id) => { const p = ctx.profiles.find((x) => x.id === id);
-  return html`<span class="who">${p && html`<${Avatar} profile=${p} size="sm" />`}${p?.display_name || (id ? id.slice(0, 6) : "—")}</span>`; };
+  return personLink(id, html`${p && html`<${Avatar} profile=${p} size="sm" />`}${p?.display_name || (id ? id.slice(0, 6) : "—")}`); };
 const all = (build) => paged((from, to) => build().range(from, to));
 const withinDays = (iso, n) => iso > new Date(Date.now() - n * DAY).toISOString();
 
@@ -172,7 +174,7 @@ const SCHEMAS = {
     ],
     cols: [
       { key: "display_name", label: "Person", type: "text", edit: true, wide: true,
-        cell: (r) => html`<span class="who"><${Avatar} profile=${r} size="sm" /> <b>${r.display_name || "—"}</b></span> ` },
+        cell: (r) => personLink(r.id, html`<${Avatar} profile=${r} size="sm" /> <b>${r.display_name || "—"}</b>`) },
       { key: "memberships", label: "Communities",
         get: (r) => (r.memberships || []).filter((m) => m.status === "member").length,
         cell: (r, ctx) => (r.memberships || []).length
@@ -206,7 +208,7 @@ const SCHEMAS = {
     cols: [
       { key: "profile_id", label: "Member", type: "select", edit: true, wide: true, join: true,
         options: profOpts, get: (r) => r.profile?.display_name || "—",
-        cell: (r) => html`<span class="who"><${Avatar} profile=${r.profile} size="sm" /> <b>${r.profile?.display_name || "—"}</b></span> ` },
+        cell: (r) => personLink(r.profile_id, html`<${Avatar} profile=${r.profile} size="sm" /> <b>${r.profile?.display_name || "—"}</b>`) },
       { key: "community_id", label: "Community", type: "select", edit: true,
         options: (ctx) => commOpts(ctx), get: (r, ctx) => commName(ctx, r.community_id, "?") },
       { key: "status", label: "Status", type: "select", edit: true, options: () => [{ v: "member", l: "member" }, { v: "pending", l: "pending" }],
@@ -404,8 +406,9 @@ function EditCell({ row, col, ctx, onSave }) {
     ref=${(el) => el && setTimeout(() => { el.focus(); if (el.select) el.select(); }, 0)} />`;
 }
 
-export function DataPage({ client, communities, session, flash, sub, go }) {
+export function DataPage({ client, communities, session, flash, sub, go, query }) {
   const tab = PAGE.data.tabs.some(([k]) => k === sub) ? sub : "communities";
+  const personId = tab === "people" ? (query?.get("u") || "") : "";
   const S = SCHEMAS[tab];
   const [q, setQ] = useState("");
   const [comm, setComm] = useState("");
@@ -477,7 +480,7 @@ export function DataPage({ client, communities, session, flash, sub, go }) {
 
   return html`<${Page} title="Data" sub="every community, live tables — you have full permissions here">
     <${Tabs} page="data" current=${tab} go=${go} />
-
+    ${personId ? html`<${PersonPage} client=${client} communities=${communities} flash=${flash} go=${go} id=${personId} />` : html`
     <div class="dt-metrics">
       <${Metrics} size="sm" loading=${rows === null} items=${metrics} />
       <div class="u-grow"></div>
@@ -523,6 +526,6 @@ export function DataPage({ client, communities, session, flash, sub, go }) {
       : tab === "bans"
       ? html`<${BanModal} client=${client} flash=${flash} onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`
       : html`<${InviteModal} client=${client} communities=${communities} profiles=${profiles || []} flash=${flash}
-          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`)}
+          onClose=${() => setAdding(false)} onSaved=${() => { setAdding(false); reload(); }} />`)}`}
   </${Page}>`;
 }
