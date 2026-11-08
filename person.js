@@ -20,7 +20,8 @@ export function PersonPage({ client, communities, flash, go, id }) {
   const { data: d, error, reload } = useLoader(async () => {
     const or = (a, b) => `${a}.eq.${id},${b}.eq.${id}`;
     const [prof, files, mem, rsv, conn, yaps, stories, staff, bans, maker, fac, crm, dms, bookings, hosted, invites, cmsg, emsg] = await Promise.all([
-      client.from("profiles").select(COLS.profile + ",connect_code,allergies").eq("id", id).maybeSingle(),
+      client.from("profile_full").select(COLS.profile + "," + COLS.profilePrivate).eq("id", id).maybeSingle()
+        .then((r) => (r.data || r.error ? r : client.from("profiles").select(COLS.profile).eq("id", id).maybeSingle())),
       client.storage.from("avatars").list(id, { limit: 100, sortBy: { column: "created_at", order: "desc" } }),
       client.from("community_members").select("community_id,status,joined_at").eq("profile_id", id).order("joined_at"),
       client.from("rsvps").select("status,created_at,activity:activities(id,title,date,starts_at,expires_at,community_id,city,host_id)").eq("profile_id", id).order("created_at", { ascending: false }).limit(300),

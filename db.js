@@ -57,6 +57,17 @@ export async function paged(page) {
   }
   return { data: rows, error: null };
 }
+// Merge each row's private profile fields (COLS.profilePrivate) from profile_full, in batches.
+export async function withPrivate(client, res) {
+  if (!res || res.error || !res.data || !res.data.length) return res;
+  const ids = res.data.map((r) => r.id), byId = {};
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await client.from("profile_full").select("id," + COLS.profilePrivate).in("id", ids.slice(i, i + 300));
+    if (error) return { data: res.data, error };
+    (data || []).forEach((p) => { byId[p.id] = p; });
+  }
+  return { data: res.data.map((r) => ({ ...r, ...(byId[r.id] || {}) })), error: null };
+}
 // Server-side count — the only honest way to get a total that may exceed a list cap.
 export async function countOf(client, table, apply = (q) => q, col = "id") {
   const { count, error } = await apply(client.from(table).select(col, { count: "exact", head: true }));
@@ -90,7 +101,9 @@ export function showError(flash, where, error) {
    tables get an explicit list so a future grant can't blank a page. */
 export const COLS = {
   profileMin: "id,display_name,avatar_url",
-  profile: "id,display_name,avatar_url,created_at,home_city,socials,phone,crm_opt_out",
+  profile: "id,display_name,avatar_url,created_at,home_city,socials",
+  // readable only through profile_full (own row, owner, staff of the person's community)
+  profilePrivate: "phone,crm_opt_out,connect_code,allergies",
   staff: "id,email,role,community_id,profile_id,created_at",
   meals: "id,community_id,cook_id,title,photos,ingredients,allergens,cuisines,price_cents,portions,pay_method,pay_handle,pickup_area,pickup_start,pickup_end,status,city,created_at",
 };

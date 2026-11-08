@@ -40,7 +40,10 @@ and `mod_delete()`.
 
 Some tables have **column-level grants** (e.g. `meals.pickup_address/lat/lng` are
 withheld from `authenticated`): `select("*")` on those 403s. Use explicit column
-lists for member-data tables.
+lists for member-data tables. `profiles` is one: `phone`, `allergies`,
+`connect_code` and `crm_opt_out` come only from the `profile_full` view
+(`COLS.profilePrivate`, merged by `withPrivate()`); a new public profiles column
+needs `grant select (col) on profiles to authenticated`.
 
 ## Edge functions
 

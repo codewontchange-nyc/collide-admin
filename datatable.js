@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "https://esm.sh/preact@10.23.2/hooks";
 import { html, Avatar, Pill, Page, Tabs, Metrics, Loading, Empty, LoadError, moneyExact, niceTime, todayStr, CITIES, cityName,
   shortDate, shortDateTime, isExpired, whenBucket, dateExpiry, EV_CATS, toCents, stampCity, DEFAULT_CITY, DAY, confirmDanger, promptReason } from "./ui.js?v=__V__";
-import { useLoader, paged, sendModerate, sendInvite, COLS, showError } from "./db.js?v=__V__";
+import { useLoader, paged, sendModerate, sendInvite, COLS, showError, withPrivate } from "./db.js?v=__V__";
 import { CommunityModal, InviteModal, BanModal } from "./modals.js?v=__V__";
 import { PAGE } from "./routes.js?v=__V__";
 import { PersonPage, personHref } from "./person.js?v=__V__";
@@ -162,9 +162,9 @@ const SCHEMAS = {
     // counting anyone who's in several communities.
     table: "profiles",
     newLabel: null,   // people arrive via invites, not row creation
-    load: (client) => all(() => client.from("profiles")
-      .select(COLS.profile + ",connect_code, memberships:community_members(community_id,status)")
-      .order("created_at", { ascending: false })),
+    load: async (client) => withPrivate(client, await all(() => client.from("profiles")
+      .select(COLS.profile + ", memberships:community_members(community_id,status)")
+      .order("created_at", { ascending: false }))),
     match: (q, r) => q.eq("id", r.id),
     metrics: (rows) => [
       ["people", rows.length],
